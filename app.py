@@ -26,11 +26,18 @@ except Exception:
 # 0. SIDEBAR: ACCOUNT, RISK, & TELEGRAM SETTINGS
 # ---------------------------------------------------------
 st.sidebar.header("📡 Data")
+# Persist the toggle in the URL (?live=1) so refreshes, redeploys and phone
+# tab suspensions don't reset it; FX_LIVE_DEFAULT=1 env/secret flips the default.
+_qp_live = st.query_params.get("live")
+_default_live = (_qp_live == "1") if _qp_live is not None else os.environ.get("FX_LIVE_DEFAULT", "0") == "1"
 live_mode = st.sidebar.toggle(
     "Live data (OANDA / Webull)",
-    value=os.environ.get("FX_LIVE_DEFAULT", "0") == "1",
+    value=_default_live,
     help="Off = delayed Yahoo data. On = live OANDA FX candles and real-time "
-         "Webull ETF prices where credentials are available.")
+         "Webull ETF prices where credentials are available. Your choice is "
+         "kept in the URL - bookmark it and it sticks.")
+if _qp_live != ("1" if live_mode else "0"):
+    st.query_params["live"] = "1" if live_mode else "0"
 
 # Spot FX has no centralized volume (Yahoo reports 0), so each pair maps a CME
 # currency future whose volume serves as an activity proxy for the volume pane.
