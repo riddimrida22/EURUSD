@@ -1,0 +1,47 @@
+name: FX Signal Scan
+
+on:
+  schedule:
+    # Every hour at :05, Sunday 21:00 UTC through Friday 21:00 UTC (FX market hours)
+    - cron: '5 * * * 1-5'
+    - cron: '5 21-23 * * 0'
+  workflow_dispatch: {}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - run: pip install -r requirements.txt
+
+      # Persist the alert-dedup state across runs (restore-keys picks the
+      # most recent previous run's state; each run saves under a fresh key)
+      - uses: actions/cache@v4
+        with:
+          path: |
+            alert_state.json
+            paper_state.json
+          key: fx-alert-state-${{ github.run_id }}
+          restore-keys: |
+            fx-alert-state-
+
+      - name: Run scanner
+        env:
+          # Optional override; scanner.py has a built-in default topic
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          # Optional: live FX candles from an OANDA practice account
+          OANDA_TOKEN: ${{ secrets.OANDA_TOKEN }}
+        run: python scanner.py
+
+      - name: Paper bot (simulated fills only)
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          OANDA_TOKEN: ${{ secrets.OANDA_TOKEN }}
+        run: python paper_bot.py
