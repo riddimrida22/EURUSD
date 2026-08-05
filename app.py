@@ -1,3 +1,4 @@
+import json
 import os
 
 import streamlit as st
@@ -45,7 +46,6 @@ WATCHLIST = {
 }
 
 st.sidebar.header("📊 Chart Settings")
-view_choice = st.sidebar.selectbox("Instrument", ["All (scanner)"] + list(WATCHLIST.keys()))
 chart_tf = st.sidebar.selectbox("Timeframe", ["5m", "15m", "1H", "4H", "1D", "1W"], index=2)
 chart_bars = st.sidebar.slider("Bars shown", 50, 400, 80, step=10)
 overlays = st.sidebar.multiselect(
@@ -182,25 +182,7 @@ def run_backtest(df):
 # ---------------------------------------------------------
 # 4. DASHBOARD RENDER
 # ---------------------------------------------------------
-# Paper-bot scoreboard (ledger written by paper_bot.py on the scan schedule)
-try:
-    import json as _json
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "paper_state.json")) as _f:
-        _ps = _json.load(_f)
-    with st.expander(f"🤖 Paper bot — realized P/L ${_ps['realized_pl']:+,.2f} · {len(_ps['open'])} open position(s)"):
-        if _ps["open"]:
-            st.dataframe(pd.DataFrame(_ps["open"]), use_container_width=True)
-        if _ps["closed"]:
-            st.caption("Recent closes")
-            st.dataframe(pd.DataFrame(_ps["closed"][-20:]), use_container_width=True)
-except FileNotFoundError:
-    pass  # bot hasn't run on this machine yet
-
-single_view = view_choice != "All (scanner)"
-render_items = [(view_choice, WATCHLIST[view_choice])] if single_view else list(WATCHLIST.items())
-
-for pair, config in render_items:
-    st.divider()
+def render_asset(pair, config):
     is_etf = config['vol_proxy'] is None
     px = ".2f" if is_etf else ".4f"  # ETFs quote in cents, FX in pips
     df_1h, df_1d, data_source = fetch_data(config['ticker'], live_mode)
@@ -288,7 +270,7 @@ for pair, config in render_items:
         full_df = calculate_indicators(raw_df.copy()) if not raw_df.empty else raw_df
     if full_df.empty:
         st.info(f"No {chart_tf} data available for {pair}.")
-        continue
+        return
     chart_df = full_df.tail(chart_bars)
 
     pane_rows = [("price", 0.60)]
@@ -366,9 +348,74 @@ for pair, config in render_items:
         fig.add_hline(y=70, line_dash="dash", line_color="#ef5350", row=row_of['rsi'], col=1)
         fig.add_hline(y=30, line_dash="dash", line_color="#26a69a", row=row_of['rsi'], col=1)
 
-    base_h = 620 if single_view else 400
-    fig.update_layout(template="plotly_dark", height=base_h + 80 * (len(pane_rows) - 1),
-                      margin=dict(l=10, r=10, t=10, b=10), showlegend=single_view)
+    fig.update_layout(template="plotly_dark", height=620 + 80 * (len(pane_rows) - 1),
+                      margin=dict(l=10, r=10, t=10, b=10), showlegend=True)
     for _i in range(1, len(pane_rows) + 1):
         fig.update_layout(**{f"xaxis{'' if _i == 1 else _i}_rangeslider_visible": False})
     st.plotly_chart(fig, use_container_width=True)
+
+# ---------------------------------------------------------
+# 5. LAYOUT: TABS
+# ---------------------------------------------------------
+@st.cache_data(ttl=60)
+def fetch_oanda_account():
+    return dp.oanda_account()
+
+tab_chart, tab_pos, tab_scan = st.tabs(["📈 Chart", "💼 Positions & Account", "🔎 Scanner"])
+
+with tab_chart:
+    sel_pair = st.selectbox("Pair / asset", list(WATCHLIST.keys()))
+    render_asset(sel_pair, WATCHLIST[sel_pair])
+
+with tab_pos:
+    st.subheader("🤖 Paper bot")
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "paper_state.json")) as _f:
+            _ps = json.load(_f)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Realized P/L", f"${_ps['realized_pl']:+,.2f}")
+        c2.metric("Open positions", len(_ps["open"]))
+        c3.metric("Closed trades", len(_ps["closed"]))
+        if _ps["open"]:
+            st.dataframe(pd.DataFrame(_ps["open"]), use_container_width=True)
+        if _ps["closed"]:
+            st.caption("Recent closes (newest first)")
+            st.dataframe(pd.DataFrame(_ps["closed"][-20:]).iloc[::-1], use_container_width=True)
+    except FileNotFoundError:
+        st.info("No paper ledger yet — it appears after the bot's first run "
+                "(hourly on GitHub Actions, or run paper_bot.py locally).")
+
+    st.subheader("🏦 OANDA account (read-only)")
+    accounts = fetch_oanda_account()
+    if accounts:
+        for acct in accounts:
+            if acct["open_count"] == 0 and acct["balance"] == 0:
+                continue  # skip empty sub-accounts
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric(f"NAV (…{acct['id'][-3:]})", f"${acct['NAV']:,.2f}")
+            c2.metric("Balance", f"${acct['balance']:,.2f}")
+            c3.metric("Unrealized P/L", f"${acct['unrealized']:+,.2f}")
+            c4.metric("Margin used", f"${acct['margin_used']:,.2f}")
+            if acct["trades"]:
+                st.dataframe(pd.DataFrame(acct["trades"]), use_container_width=True)
+    else:
+        st.info("Set OANDA_TOKEN (env / secrets / Downloads token file) to see live account data.")
+
+with tab_scan:
+    scan_rows = []
+    for _p, _cfg in WATCHLIST.items():
+        try:
+            _d1h, _d1d, _src = fetch_data(_cfg['ticker'], live_mode)
+            _d1h = calculate_indicators(_d1h)
+            _d1h = apply_strategies(_d1h, _p)
+            _lt = _d1h.iloc[-1]
+            _n, _wr, _pf = run_backtest(_d1h)
+            _trend = "🟢 Bullish" if float(_d1d['Close'].iloc[-1]) > float(_d1d['Close'].rolling(50).mean().iloc[-1]) else "🔴 Bearish"
+            _px = ".2f" if _cfg['vol_proxy'] is None else ".4f"
+            scan_rows.append({
+                "Asset": _p, "Strategy": _cfg['strategy'], "Price": f"{float(_lt['Close']):{_px}}",
+                "Daily trend": _trend, "Signal (2 bars)": "🚨 YES" if bool(_d1h['Signal'].tail(2).any()) else "—",
+                "Win rate %": round(_wr, 1), "Profit factor": round(_pf, 2), "Data": _src})
+        except Exception as _e:
+            scan_rows.append({"Asset": _p, "Strategy": _cfg['strategy'], "Data": f"error: {_e}"})
+    st.dataframe(pd.DataFrame(scan_rows), use_container_width=True, hide_index=True)

@@ -163,6 +163,36 @@ def fetch_asset(ticker, allow_live=True):
     return df_1h, df_1d, "Yahoo (delayed)"
 
 
+def oanda_account():
+    """Read-only account summary + open trades for every OANDA account the
+    token can see. Returns a list of dicts, or None when no token is set."""
+    if not _oanda_token():
+        return None
+    base = _oanda_base()
+    h = {"Authorization": f"Bearer {_oanda_token()}"}
+    out = []
+    try:
+        accounts = requests.get(f"{base}/v3/accounts", headers=h, timeout=15).json()["accounts"]
+        for a in accounts:
+            aid = a["id"]
+            s = requests.get(f"{base}/v3/accounts/{aid}/summary", headers=h, timeout=15).json()["account"]
+            trades = requests.get(f"{base}/v3/accounts/{aid}/openTrades", headers=h, timeout=15).json()["trades"]
+            rows = [{
+                "instrument": t["instrument"], "units": float(t["currentUnits"]),
+                "entry": float(t["price"]), "unrealized P/L": float(t["unrealizedPL"]),
+                "SL": float(t["stopLossOrder"]["price"]) if t.get("stopLossOrder") else None,
+                "TP": float(t["takeProfitOrder"]["price"]) if t.get("takeProfitOrder") else None,
+                "trail dist": t.get("trailingStopLossOrder", {}).get("distance"),
+            } for t in trades]
+            out.append({"id": aid, "NAV": float(s["NAV"]), "balance": float(s["balance"]),
+                        "unrealized": float(s["unrealizedPL"]), "open_count": int(s["openTradeCount"]),
+                        "margin_used": float(s.get("marginUsed", 0)), "trades": rows})
+    except Exception as e:
+        print(f"OANDA account fetch failed: {e}")
+        return None
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Webull OpenAPI real-time ETF price (vendored from the options-bot desk's
 # verified pure-python adapter: HMAC-SHA1 request signing, no SDK needed)
