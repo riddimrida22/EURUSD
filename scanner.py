@@ -31,6 +31,7 @@ WATCHLIST = {
     "EUR/USD": {"ticker": "EURUSD=X", "strategy": "Trend Following"},
     "EUR/GBP": {"ticker": "EURGBP=X", "strategy": "Mean Reversion"},
     "GBP/JPY": {"ticker": "GBPJPY=X", "strategy": "Trend Following"},
+    "EUR/JPY": {"ticker": "EURJPY=X", "strategy": "Trend Following"},
     "USD/JPY": {"ticker": "USDJPY=X", "strategy": "Trend Following"},
     "USD/CAD": {"ticker": "USDCAD=X", "strategy": "Momentum Breakout"},
     "SPY (S&P 500)": {"ticker": "SPY", "strategy": "Equity Pullback (Buy the Dip)"},
@@ -107,7 +108,7 @@ def apply_strategies(df, pair):
                                    (df['Close'] > df['Prev_Open']) & (df['Open'] < df['Prev_Close']))
         df['Signal'] = (df['Bullish_Engulfing'] & (abs(df['Low'] - df['Swing_Low']) <= 0.0015))
 
-    elif pair in ("GBP/JPY", "USD/JPY", "EUR/USD"):
+    elif pair in ("GBP/JPY", "USD/JPY", "EUR/USD", "EUR/JPY"):
         df['SMA_20'], df['SMA_50'] = df['Close'].rolling(20).mean(), df['Close'].rolling(50).mean()
         df['Signal'] = (df['SMA_20'] > df['SMA_50']) & (df['SMA_20'].shift(1) <= df['SMA_50'].shift(1))
 

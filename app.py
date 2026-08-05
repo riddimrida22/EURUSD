@@ -46,6 +46,7 @@ WATCHLIST = {
     "EUR/USD": {"ticker": "EURUSD=X", "strategy": "Trend Following", "vol_proxy": "6E=F"},
     "EUR/GBP": {"ticker": "EURGBP=X", "strategy": "Mean Reversion", "vol_proxy": "6E=F"},
     "GBP/JPY": {"ticker": "GBPJPY=X", "strategy": "Trend Following", "vol_proxy": "6J=F"},
+    "EUR/JPY": {"ticker": "EURJPY=X", "strategy": "Trend Following", "vol_proxy": "6J=F"},
     "USD/JPY": {"ticker": "USDJPY=X", "strategy": "Trend Following", "vol_proxy": "6J=F"},
     "USD/CAD": {"ticker": "USDCAD=X", "strategy": "Momentum Breakout", "vol_proxy": "6C=F"},
     "SPY (S&P 500)": {"ticker": "SPY", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None},
@@ -145,7 +146,7 @@ def apply_strategies(df, pair):
                                    (df['Close'] > df['Prev_Open']) & (df['Open'] < df['Prev_Close']))
         df['Signal'] = (df['Bullish_Engulfing'] & (abs(df['Low'] - df['Swing_Low']) <= 0.0015))
 
-    elif pair in ("GBP/JPY", "USD/JPY", "EUR/USD"):
+    elif pair in ("GBP/JPY", "USD/JPY", "EUR/USD", "EUR/JPY"):
         df['SMA_20'], df['SMA_50'] = df['Close'].rolling(20).mean(), df['Close'].rolling(50).mean()
         df['Signal'] = (df['SMA_20'] > df['SMA_50']) & (df['SMA_20'].shift(1) <= df['SMA_50'].shift(1))
 
@@ -316,7 +317,7 @@ def render_asset(pair, config):
     if chart_tf == "1H":
         if pair == "EUR/GBP":
             fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df['Swing_Low'], mode='lines', line=dict(color='#00E676', dash='dash'), name='Support'), row=1, col=1)
-        elif pair in ("GBP/JPY", "USD/JPY", "EUR/USD"):
+        elif pair in ("GBP/JPY", "USD/JPY", "EUR/USD", "EUR/JPY"):
             fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df['SMA_20'], mode='lines', line=dict(color='#FF9800'), name='SMA 20'), row=1, col=1)
             fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df['SMA_50'], mode='lines', line=dict(color='#2196F3'), name='SMA 50'), row=1, col=1)
         elif pair == "USD/CAD":

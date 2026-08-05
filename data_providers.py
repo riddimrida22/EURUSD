@@ -33,6 +33,7 @@ import yfinance as yf
 OANDA_INSTRUMENTS = {
     "EURGBP=X": "EUR_GBP",
     "GBPJPY=X": "GBP_JPY",
+    "EURJPY=X": "EUR_JPY",
     "USDJPY=X": "USD_JPY",
     "USDCAD=X": "USD_CAD",
 }
