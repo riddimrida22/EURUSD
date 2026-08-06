@@ -418,6 +418,8 @@ with tab_pos:
     wb_accounts = fetch_webull_account()
     if wb_accounts:
         for wba in wb_accounts:
+            if wba["net_liq"] == 0 and not wba["positions"]:
+                continue  # skip empty sub-account shells
             c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric(f"Net liq ({wba['type'] or wba['id']})", f"${wba['net_liq']:,.2f}")
             c2.metric("Cash", f"${wba['cash']:,.2f}")
