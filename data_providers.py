@@ -137,6 +137,18 @@ def fetch_chart(ticker, tf="1H", bars=80, allow_live=True):
                 return df, "OANDA (live)"
         except Exception as e:
             print(f"OANDA chart fetch failed for {inst} {tf} ({e}); falling back to Yahoo")
+    if allow_live and inst is None:  # ETFs: real-time bars via Webull OpenAPI
+        try:
+            fetch_n = count * 4 if tf == "4H" else count * 5 if tf == "1W" else count
+            df = wb_bars(ticker, _WB_CHART_TF[tf], fetch_n)
+            if not df.empty:
+                if tf == "4H":
+                    df = df.resample("4h").agg(_OHLC_AGG).dropna()
+                elif tf == "1W":
+                    df = df.resample("W").agg(_OHLC_AGG).dropna()
+                return df.tail(count), "Webull (live)"
+        except Exception as e:
+            print(f"Webull chart fetch failed for {ticker} {tf} ({e}); falling back to Yahoo")
     interval, period = _YF_CHART[tf]
     df = yf.download(ticker, period=period, interval=interval, progress=False)
     if isinstance(df.columns, pd.MultiIndex):
@@ -160,6 +172,14 @@ def fetch_asset(ticker, allow_live=True):
                 return df_1h, df_1d, "OANDA (live)"
         except Exception as e:
             print(f"OANDA fetch failed for {inst} ({e}); falling back to Yahoo")
+    if allow_live and inst is None:  # ETFs: real-time bars via Webull OpenAPI
+        try:
+            df_1h = wb_bars(ticker, "M60", 720)
+            df_1d = wb_bars(ticker, "D", 180)
+            if len(df_1h) >= 250 and not df_1d.empty:  # enough for SMA 200
+                return df_1h, df_1d, "Webull (live)"
+        except Exception as e:
+            print(f"Webull bars failed for {ticker} ({e}); falling back to Yahoo")
     df_1h, df_1d = _yf_pair(ticker)
     return df_1h, df_1d, "Yahoo (delayed)"
 
@@ -252,6 +272,32 @@ def _wb_signed_headers(app_key, secret, uri, query=None):
         "x-signature-nonce": sp["x-signature-nonce"], "x-signature": sig,
         "x-version": "v1", "Content-Type": "application/json",
     }
+
+
+_WB_CHART_TF = {"5m": "M5", "15m": "M15", "1H": "M60", "4H": "M60", "1D": "D", "1W": "D"}
+_OHLC_AGG = {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
+
+
+def wb_bars(symbol, timespan, count):
+    """Webull OpenAPI candles (real-time, includes pre/after-market) as a
+    DataFrame. Empty frame when credentials or data are unavailable."""
+    key, sec = _wb_load_keys()
+    if not key:
+        return pd.DataFrame()
+    query = {"symbol": symbol, "category": "US_ETF", "timespan": timespan, "count": str(min(int(count), 1200))}
+    uri = "/market-data/bars"
+    h = _wb_signed_headers(key, sec, uri, query)
+    url = f"https://{_WB_HOST}{uri}?" + urlencode(query)
+    with urllib.request.urlopen(urllib.request.Request(url, headers=h, method="GET"), timeout=15) as r:
+        data = json.loads(r.read().decode() or "null")
+    rows = [{"Time": b["time"], "Open": float(b["open"]), "High": float(b["high"]),
+             "Low": float(b["low"]), "Close": float(b["close"]), "Volume": float(b.get("volume") or 0)}
+            for b in (data if isinstance(data, list) else [])]
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    df["Time"] = pd.to_datetime(df["Time"], format="ISO8601", utc=True)
+    return df.set_index("Time").sort_index()
 
 
 def live_etf_price(symbol):
