@@ -308,13 +308,23 @@ _WB_CHART_TF = {"5m": "M5", "15m": "M15", "1H": "M60", "4H": "M60", "1D": "D", "
 _OHLC_AGG = {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
 
 
-def _wb_get(key, sec, uri, query=None):
-    """Signed read-only GET against the Webull OpenAPI."""
+def _wb_get(key, sec, uri, query=None, retries=2):
+    """Signed read-only GET against the Webull OpenAPI, with 429 backoff
+    (the options desk polls the same account endpoints; quota is shared)."""
+    import time as _time
+    import urllib.error
     _assert_readonly(uri, _WEBULL_READONLY_PATHS)
-    h = _wb_signed_headers(key, sec, uri, query or {})
-    url = f"https://{_WB_HOST}{uri}" + (("?" + urlencode(query)) if query else "")
-    with urllib.request.urlopen(urllib.request.Request(url, headers=h, method="GET"), timeout=15) as r:
-        return json.loads(r.read().decode() or "null")
+    for attempt in range(retries + 1):
+        h = _wb_signed_headers(key, sec, uri, query or {})
+        url = f"https://{_WB_HOST}{uri}" + (("?" + urlencode(query)) if query else "")
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=h, method="GET"), timeout=15) as r:
+                return json.loads(r.read().decode() or "null")
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt < retries:
+                _time.sleep(4 + attempt * 6)
+                continue
+            raise
 
 
 def webull_account():
@@ -331,10 +341,6 @@ def webull_account():
             if not aid or aid in seen:
                 continue
             seen.add(aid)
-            try:
-                prof = _wb_get(key, sec, "/account/profile", {"account_id": aid})
-            except Exception:
-                prof = {}
             bal = _wb_get(key, sec, "/account/balance", {"account_id": aid, "total_asset_currency": "USD"})
             cur = (bal.get("account_currency_assets") or [{}])[0]
             raw = _wb_get(key, sec, "/account/positions", {"account_id": aid})
@@ -356,8 +362,8 @@ def webull_account():
                 "day P/L": round(_num(p.get("day_profit_loss")), 2),
             } for p in holdings]
             out.append({
-                "id": prof.get("account_number", aid),
-                "type": str(prof.get("account_type", "")).title(),
+                "id": str(aid),
+                "type": "",
                 "net_liq": _num(bal.get("total_net_liquidation_value") or cur.get("net_liquidation_value")),
                 "cash": _num(bal.get("total_cash_balance") or cur.get("cash_balance")),
                 "buying_power": _num(cur.get("option_buying_power") or cur.get("margin_power") or cur.get("day_buying_power")),
