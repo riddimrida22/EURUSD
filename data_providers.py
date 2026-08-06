@@ -213,6 +213,21 @@ def fetch_asset(ticker, allow_live=True):
     return df_1h, df_1d, "Yahoo (delayed)"
 
 
+def live_fx_price(ticker):
+    """Latest 1-minute candle close from OANDA — effectively the live price.
+    Returns None without a token or for non-FX tickers."""
+    inst = OANDA_INSTRUMENTS.get(ticker)
+    if not (inst and _oanda_token()):
+        return None
+    try:
+        df = _oanda_candles(inst, "M1", 1)
+        if not df.empty:
+            return float(df["Close"].iloc[-1])
+    except Exception as e:
+        print(f"OANDA live price failed for {inst}: {e}")
+    return None
+
+
 def oanda_account():
     """Read-only account summary + open trades for every OANDA account the
     token can see. Returns a list of dicts, or None when no token is set."""

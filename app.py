@@ -11,6 +11,11 @@ import requests
 
 import data_providers as dp
 
+try:
+    from streamlit_autorefresh import st_autorefresh
+except ImportError:
+    st_autorefresh = None
+
 st.set_page_config(page_title="Pro FX & ETF Terminal", page_icon="🏦", layout="wide")
 st.title("Pro Watchlist & Institutional Scanner")
 
@@ -38,6 +43,13 @@ live_mode = st.sidebar.toggle(
          "kept in the URL - bookmark it and it sticks.")
 if _qp_live != ("1" if live_mode else "0"):
     st.query_params["live"] = "1" if live_mode else "0"
+
+_REFRESH_MS = {"Off": 0, "30s": 30_000, "60s": 60_000, "5m": 300_000}
+refresh_choice = st.sidebar.selectbox("Auto-refresh", list(_REFRESH_MS), index=2,
+                                      help="Reruns the page on a timer so prices tick. Charts/scans "
+                                           "refetch at most every 5 min; live prices every 20-30s.")
+if st_autorefresh and _REFRESH_MS[refresh_choice]:
+    st_autorefresh(interval=_REFRESH_MS[refresh_choice], key="auto_refresh")
 
 # Spot FX has no centralized volume (Yahoo reports 0), so each pair maps a CME
 # currency future whose volume serves as an activity proxy for the volume pane.
@@ -124,6 +136,11 @@ def fetch_data(ticker, live):
 def live_price(ticker):
     # Real-time ETF last price via Webull OpenAPI (None if unavailable)
     return dp.live_etf_price(ticker)
+
+@st.cache_data(ttl=20)
+def live_fx(ticker):
+    # Latest OANDA 1-minute close (None without token / non-FX)
+    return dp.live_fx_price(ticker)
 
 @st.cache_data(ttl=300)
 def fetch_chart_data(ticker, tf, bars, live):
@@ -224,10 +241,10 @@ def render_asset(pair, config):
     # Live price: Webull real-time for ETFs; OANDA's forming candle is
     # already live for FX. Bars (and signals) stay on the fetched data.
     current_price, price_note = latest['Close'], data_source
-    if is_etf and live_mode:
-        lp = live_price(config['ticker'])
+    if live_mode:
+        lp = live_price(config['ticker']) if is_etf else live_fx(config['ticker'])
         if lp:
-            current_price, price_note = lp, "Webull (live)"
+            current_price, price_note = lp, "Webull (live)" if is_etf else "OANDA (live tick)"
     st.caption(f"Data: {data_source}" + (f" · Price: {price_note}" if price_note != data_source else ""))
 
     # 2. Advanced Backtest Metrics
