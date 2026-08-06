@@ -39,14 +39,18 @@ jobs:
         env:
           # Optional override; scanner.py has a built-in default topic
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-          # Optional: live FX candles from an OANDA practice account
+          # Optional: live FX candles (OANDA) and live equity bars (Webull)
           OANDA_TOKEN: ${{ secrets.OANDA_TOKEN }}
+          WEBULL_APP_KEY: ${{ secrets.WEBULL_APP_KEY }}
+          WEBULL_APP_SECRET: ${{ secrets.WEBULL_APP_SECRET }}
         run: python scanner.py
 
       - name: Paper bot (simulated fills only)
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           OANDA_TOKEN: ${{ secrets.OANDA_TOKEN }}
+          WEBULL_APP_KEY: ${{ secrets.WEBULL_APP_KEY }}
+          WEBULL_APP_SECRET: ${{ secrets.WEBULL_APP_SECRET }}
         run: python paper_bot.py
 
       # Publish the ledger so the deployed dashboard's Positions tab shows it
