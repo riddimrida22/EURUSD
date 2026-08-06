@@ -39,7 +39,7 @@ WATCHLISTS = {
         "USD/JPY": {"ticker": "USDJPY=X", "strategy": "Trend Following"},
         "USD/CAD": {"ticker": "USDCAD=X", "strategy": "Momentum Breakout"},
     },
-    "Index ETFs": {"SPY (S&P 500)": _eq("SPY"), "QQQ (Nasdaq)": _eq("QQQ")},
+    "Index ETFs": {"SPY": _eq("SPY"), "QQQ": _eq("QQQ")},
     "Magnificent 7": {s: _eq(s) for s in ("AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA")},
     "Hyperscalers": {s: _eq(s) for s in ("MSFT", "AMZN", "GOOGL", "META", "ORCL", "CRWV")},
     "Memory (semis tell)": {s: _eq(s) for s in ("MU", "SNDK")},

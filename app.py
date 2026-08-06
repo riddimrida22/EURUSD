@@ -71,7 +71,7 @@ WATCHLISTS = {
         "USD/JPY": {"ticker": "USDJPY=X", "strategy": "Trend Following", "vol_proxy": "6J=F"},
         "USD/CAD": {"ticker": "USDCAD=X", "strategy": "Momentum Breakout", "vol_proxy": "6C=F"},
     },
-    "Index ETFs": {"SPY (S&P 500)": _eq("SPY"), "QQQ (Nasdaq)": _eq("QQQ")},
+    "Index ETFs": {"SPY": _eq("SPY"), "QQQ": _eq("QQQ")},
     "Magnificent 7": {s: _eq(s) for s in ("AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA")},
     "Hyperscalers": {s: _eq(s) for s in ("MSFT", "AMZN", "GOOGL", "META", "ORCL", "CRWV")},
     "Memory (semis tell)": {s: _eq(s) for s in ("MU", "SNDK")},
@@ -568,7 +568,8 @@ with tab_scan:
     from urllib.parse import quote as _quote
 
     def _scan_row(_p, _cfg):
-        _link = f"?asset={_quote(_p)}&live={'1' if live_mode else '0'}"
+        # fragment carries the clean name for LinkColumn's display regex
+        _link = f"?asset={_quote(_p)}&live={'1' if live_mode else '0'}#{_p}"
         try:
             _d1h, _d1d, _src = fetch_data(_cfg['ticker'], live_mode)
             _d1h = calculate_indicators(_d1h)
@@ -577,14 +578,14 @@ with tab_scan:
             _n, _wr, _pf = run_backtest(_d1h)
             _trend = "🟢 Bullish" if float(_d1d['Close'].iloc[-1]) > float(_d1d['Close'].rolling(50).mean().iloc[-1]) else "🔴 Bearish"
             _px = ".2f" if _cfg['vol_proxy'] is None else ".4f"
-            return {"Asset": _p, "Chart": _link, "Strategy": _cfg['strategy'], "Price": f"{float(_lt['Close']):{_px}}",
+            return {"Asset": _link, "Strategy": _cfg['strategy'], "Price": f"{float(_lt['Close']):{_px}}",
                     "Daily trend": _trend, "Signal (2 bars)": "🚨 YES" if bool(_d1h['Signal'].tail(2).any()) else "—",
                     "Win rate %": round(_wr, 1), "Profit factor": round(_pf, 2), "Data": _src}
         except Exception as _e:
-            return {"Asset": _p, "Chart": _link, "Strategy": _cfg['strategy'], "Data": f"error: {_e}"}
+            return {"Asset": _link, "Strategy": _cfg['strategy'], "Data": f"error: {_e}"}
 
     for _gname, _g_assets in WATCHLISTS.items():
         st.subheader(_gname)
         st.dataframe(pd.DataFrame([_scan_row(_p, _cfg) for _p, _cfg in _g_assets.items()]),
                      use_container_width=True, hide_index=True,
-                     column_config={"Chart": st.column_config.LinkColumn("Chart", display_text="📈 open")})
+                     column_config={"Asset": st.column_config.LinkColumn("Asset", display_text=r"#(.+)$")})
