@@ -384,6 +384,10 @@ def render_asset(pair, config):
 def fetch_oanda_account():
     return dp.oanda_account()
 
+@st.cache_data(ttl=60)
+def fetch_webull_account():
+    return dp.webull_account()
+
 tab_chart, tab_pos, tab_scan = st.tabs(["📈 Chart", "💼 Positions & Account", "🔎 Scanner"])
 
 with tab_chart:
@@ -409,6 +413,21 @@ with tab_pos:
     except FileNotFoundError:
         st.info("No paper ledger yet — it appears after the bot's first run "
                 "(hourly on GitHub Actions, or run paper_bot.py locally).")
+
+    st.subheader("🪙 Webull account (read-only)")
+    wb_accounts = fetch_webull_account()
+    if wb_accounts:
+        for wba in wb_accounts:
+            c1, c2, c3, c4, c5 = st.columns(5)
+            c1.metric(f"Net liq ({wba['type'] or wba['id']})", f"${wba['net_liq']:,.2f}")
+            c2.metric("Cash", f"${wba['cash']:,.2f}")
+            c3.metric("Buying power", f"${wba['buying_power']:,.2f}")
+            c4.metric("Day P/L", f"${wba['day_pl']:+,.2f}")
+            c5.metric("Unrealized P/L", f"${wba['upl']:+,.2f}")
+            if wba["positions"]:
+                st.dataframe(pd.DataFrame(wba["positions"]), use_container_width=True)
+    else:
+        st.info("Set WEBULL_APP_KEY / WEBULL_APP_SECRET (secrets or Downloads key file) to see account data.")
 
     st.subheader("🏦 OANDA account (read-only)")
     accounts = fetch_oanda_account()

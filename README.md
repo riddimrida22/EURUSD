@@ -1,5 +1,8 @@
 # Pro FX & ETF Terminal (EURUSD edition)
 
+> **Public repo note:** push alerts require setting an `NTFY_TOPIC` (GitHub Actions secret, Streamlit secret, or env var). No topic is baked into the code — pick a private, unguessable name.
+
+
 Quantitative FX + ETF scanning dashboard + backtester (Streamlit), migrated from a Gemini web-chat project on 2026-08-04.
 
 ## What it does

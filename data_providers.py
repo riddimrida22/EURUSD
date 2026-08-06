@@ -40,7 +40,11 @@ _OANDA_READONLY_PATHS = (
     "/v3/accounts",       # account list, summaries, open trades (GET only)
 )
 _WEBULL_READONLY_PATHS = (
-    "/market-data/",      # bars / quotes
+    "/market-data/",            # bars / quotes
+    "/app/subscriptions/list",  # account enumeration (read)
+    "/account/profile",         # account metadata (read)
+    "/account/balance",         # balances (read)
+    "/account/positions",       # holdings (read)
 )
 
 
@@ -302,6 +306,69 @@ def _wb_signed_headers(app_key, secret, uri, query=None):
 
 _WB_CHART_TF = {"5m": "M5", "15m": "M15", "1H": "M60", "4H": "M60", "1D": "D", "1W": "D"}
 _OHLC_AGG = {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
+
+
+def _wb_get(key, sec, uri, query=None):
+    """Signed read-only GET against the Webull OpenAPI."""
+    _assert_readonly(uri, _WEBULL_READONLY_PATHS)
+    h = _wb_signed_headers(key, sec, uri, query or {})
+    url = f"https://{_WB_HOST}{uri}" + (("?" + urlencode(query)) if query else "")
+    with urllib.request.urlopen(urllib.request.Request(url, headers=h, method="GET"), timeout=15) as r:
+        return json.loads(r.read().decode() or "null")
+
+
+def webull_account():
+    """Read-only Webull account summary + positions (same endpoints as the
+    options-desk adapter). Returns a list of account dicts, or None."""
+    key, sec = _wb_load_keys()
+    if not key:
+        return None
+    try:
+        subs = _wb_get(key, sec, "/app/subscriptions/list")
+        out, seen = [], set()
+        for s in (subs if isinstance(subs, list) else []):
+            aid = s.get("account_id")
+            if not aid or aid in seen:
+                continue
+            seen.add(aid)
+            try:
+                prof = _wb_get(key, sec, "/account/profile", {"account_id": aid})
+            except Exception:
+                prof = {}
+            bal = _wb_get(key, sec, "/account/balance", {"account_id": aid, "total_asset_currency": "USD"})
+            cur = (bal.get("account_currency_assets") or [{}])[0]
+            raw = _wb_get(key, sec, "/account/positions", {"account_id": aid})
+            holdings = raw.get("holdings", []) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
+
+            def _num(x):
+                try:
+                    return float(x)
+                except (TypeError, ValueError):
+                    return 0.0
+
+            rows = [{
+                "symbol": p.get("symbol", "") + (" (opt)" if p.get("instrument_type") == "OPTION" else ""),
+                "qty": _num(p.get("qty") or p.get("quantity")),
+                "avg cost": round(_num(p.get("unit_cost") or p.get("cost_price")), 4),
+                "last": round(_num(p.get("last_price")), 4),
+                "value": round(_num(p.get("market_value")), 2),
+                "unrealized P/L": round(_num(p.get("unrealized_profit_loss")), 2),
+                "day P/L": round(_num(p.get("day_profit_loss")), 2),
+            } for p in holdings]
+            out.append({
+                "id": prof.get("account_number", aid),
+                "type": str(prof.get("account_type", "")).title(),
+                "net_liq": _num(bal.get("total_net_liquidation_value") or cur.get("net_liquidation_value")),
+                "cash": _num(bal.get("total_cash_balance") or cur.get("cash_balance")),
+                "buying_power": _num(cur.get("option_buying_power") or cur.get("margin_power") or cur.get("day_buying_power")),
+                "upl": round(sum(r["unrealized P/L"] for r in rows), 2),
+                "day_pl": round(sum(r["day P/L"] for r in rows), 2),
+                "positions": rows,
+            })
+        return out or None
+    except Exception as e:
+        print(f"Webull account fetch failed: {e}")
+        return None
 
 
 _wb_category_cache = {}  # symbol -> "US_STOCK" | "US_ETF", learned on first success
