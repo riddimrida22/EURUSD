@@ -502,6 +502,14 @@ def render_asset(pair, config):
                     r2[2].metric("Cash", _fmt_big(f["total_cash"]))
                     r2[3].metric("Free cash flow", _fmt_big(f["fcf"]))
                     r2[4].metric("Profit margin", _fmt_pct(f["profit_margin"]))
+                    rc = st.columns(5)
+                    rc[0].metric("Credit rating (synthetic)", f.get("credit_rating") or "—")
+                    rc[1].metric("Est. debt spread", f"+{f['credit_spread']:.2f}%" if f.get("credit_spread") else "—")
+                    _icr = f.get("icr")
+                    rc[2].metric("Interest coverage", "∞" if _icr == float("inf") else (f"{_icr:.1f}x" if _icr else "—"))
+                    st.caption("Credit rating is *synthetic* — derived from interest coverage (EBIT ÷ interest expense) "
+                               "via the Damodaran mapping, with the typical spread over treasuries at that tier. "
+                               "It is NOT an S&P/Moody's rating.")
                 r3 = st.columns(5)
                 r3[0].metric("Revenue growth", _fmt_pct(f["rev_growth"]))
                 r3[1].metric("Dividend yield", _fmt_pct(f["div_yield"]))

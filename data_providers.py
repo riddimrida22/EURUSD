@@ -214,6 +214,23 @@ def fetch_asset(ticker, allow_live=True):
     return df_1h, df_1d, "Yahoo (delayed)"
 
 
+# Damodaran-style synthetic rating: interest-coverage ratio -> (rating, typical
+# spread over treasuries, %). Approximate large-cap table; NOT an agency rating.
+_SYNTH_RATING = [
+    (8.5, "AAA", 0.63), (6.5, "AA", 0.78), (5.5, "A+", 0.98), (4.25, "A", 1.08),
+    (3.0, "A-", 1.22), (2.5, "BBB", 1.56), (2.25, "BB+", 2.00), (2.0, "BB", 2.40),
+    (1.75, "B+", 3.51), (1.5, "B", 4.21), (1.25, "B-", 5.15), (0.8, "CCC", 8.20),
+    (0.65, "CC", 8.64), (0.2, "C", 11.34), (float("-inf"), "D", 15.12),
+]
+
+
+def _synthetic_rating(icr):
+    for floor, rating, spread in _SYNTH_RATING:
+        if icr >= floor:
+            return rating, spread
+    return "D", 15.12
+
+
 def equity_fundamentals(symbol):
     """Key fundamentals via yfinance .info (None on failure). Slow (~1-2s) —
     callers should cache aggressively; these change quarterly, not hourly."""
@@ -225,7 +242,28 @@ def equity_fundamentals(symbol):
     if not info.get("marketCap") and not info.get("totalAssets"):
         return None
     g = info.get
+    # Credit quality: interest coverage -> synthetic rating + typical spread
+    icr = rating = spread = None
+    try:
+        inc = yf.Ticker(symbol).income_stmt
+        ebit = interest = None
+        for row in ("EBIT", "Operating Income"):
+            if row in inc.index:
+                ebit = float(inc.loc[row].dropna().iloc[0]); break
+        if "Interest Expense" in inc.index:
+            iv = inc.loc["Interest Expense"].dropna()
+            interest = abs(float(iv.iloc[0])) if len(iv) else None
+        if ebit is not None:
+            if not interest:  # no/negligible interest expense
+                if (g("totalDebt") or 0) < 0.05 * (g("marketCap") or 1):
+                    icr, (rating, spread) = float("inf"), ("AAA (net cash)", 0.63)
+            else:
+                icr = ebit / interest
+                rating, spread = _synthetic_rating(icr)
+    except Exception as e:
+        print(f"credit calc failed for {symbol}: {e}")
     return {
+        "icr": icr, "credit_rating": rating, "credit_spread": spread,
         "name": g("shortName") or symbol,
         "is_fund": bool(g("totalAssets")) and not g("totalDebt"),
         "market_cap": g("marketCap") or g("totalAssets"),
