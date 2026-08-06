@@ -450,7 +450,7 @@ def render_asset(pair, config):
 # ---------------------------------------------------------
 # 5. LAYOUT: TABS
 # ---------------------------------------------------------
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=20)
 def fetch_oanda_account():
     return dp.oanda_account()
 
@@ -467,6 +467,9 @@ with tab_chart:
     render_asset(sel_pair, WATCHLISTS[sel_group][sel_pair])
 
 with tab_pos:
+    from datetime import datetime as _dtnow
+    st.caption(f"Updated {_dtnow.now().strftime('%H:%M:%S')} — refreshes with the sidebar Auto-refresh timer "
+               f"(OANDA every 20s, Webull every 60s, paper ledger hourly from the cloud bot)")
     st.subheader("🤖 Paper bot")
     try:
         with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "paper_state.json")) as _f:
