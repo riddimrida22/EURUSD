@@ -479,12 +479,28 @@ def fetch_oanda_account():
 def fetch_webull_account():
     return dp.webull_account()
 
+# Deep-link: ?asset=<name> (from Scanner links) preselects the Chart tab's
+# watchlist + asset, then clears itself so manual browsing isn't sticky.
+_qp_asset = st.query_params.get("asset")
+if _qp_asset:
+    from urllib.parse import unquote as _unquote
+    _a = _unquote(_qp_asset)
+    for _g, _assets in WATCHLISTS.items():
+        if _a in _assets:
+            st.session_state["sel_group"] = _g
+            st.session_state["sel_asset"] = _a
+            break
+    del st.query_params["asset"]
+
 tab_chart, tab_pos, tab_scan = st.tabs(["📈 Chart", "💼 Positions & Account", "🔎 Scanner"])
 
 with tab_chart:
     c_wl, c_asset = st.columns([1, 2])
-    sel_group = c_wl.selectbox("Watchlist", list(WATCHLISTS.keys()))
-    sel_pair = c_asset.selectbox("Asset", list(WATCHLISTS[sel_group].keys()))
+    sel_group = c_wl.selectbox("Watchlist", list(WATCHLISTS.keys()), key="sel_group")
+    _opts = list(WATCHLISTS[sel_group].keys())
+    if st.session_state.get("sel_asset") not in _opts:
+        st.session_state["sel_asset"] = _opts[0]
+    sel_pair = c_asset.selectbox("Asset", _opts, key="sel_asset")
     render_asset(sel_pair, WATCHLISTS[sel_group][sel_pair])
 
 with tab_pos:
@@ -549,7 +565,10 @@ with tab_pos:
         _render_oanda_body()
 
 with tab_scan:
+    from urllib.parse import quote as _quote
+
     def _scan_row(_p, _cfg):
+        _link = f"?asset={_quote(_p)}&live={'1' if live_mode else '0'}"
         try:
             _d1h, _d1d, _src = fetch_data(_cfg['ticker'], live_mode)
             _d1h = calculate_indicators(_d1h)
@@ -558,13 +577,14 @@ with tab_scan:
             _n, _wr, _pf = run_backtest(_d1h)
             _trend = "🟢 Bullish" if float(_d1d['Close'].iloc[-1]) > float(_d1d['Close'].rolling(50).mean().iloc[-1]) else "🔴 Bearish"
             _px = ".2f" if _cfg['vol_proxy'] is None else ".4f"
-            return {"Asset": _p, "Strategy": _cfg['strategy'], "Price": f"{float(_lt['Close']):{_px}}",
+            return {"Asset": _p, "Chart": _link, "Strategy": _cfg['strategy'], "Price": f"{float(_lt['Close']):{_px}}",
                     "Daily trend": _trend, "Signal (2 bars)": "🚨 YES" if bool(_d1h['Signal'].tail(2).any()) else "—",
                     "Win rate %": round(_wr, 1), "Profit factor": round(_pf, 2), "Data": _src}
         except Exception as _e:
-            return {"Asset": _p, "Strategy": _cfg['strategy'], "Data": f"error: {_e}"}
+            return {"Asset": _p, "Chart": _link, "Strategy": _cfg['strategy'], "Data": f"error: {_e}"}
 
     for _gname, _g_assets in WATCHLISTS.items():
         st.subheader(_gname)
         st.dataframe(pd.DataFrame([_scan_row(_p, _cfg) for _p, _cfg in _g_assets.items()]),
-                     use_container_width=True, hide_index=True)
+                     use_container_width=True, hide_index=True,
+                     column_config={"Chart": st.column_config.LinkColumn("Chart", display_text="📈 open")})
