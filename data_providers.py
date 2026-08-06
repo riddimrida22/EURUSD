@@ -14,6 +14,8 @@ Env vars:
 """
 import base64
 import hashlib
+import threading
+import time
 import hmac
 import json
 import os
@@ -244,9 +246,37 @@ def us10y_yield():
         return None
 
 
+_fund_cache = {}          # symbol -> (fetched_at, data)
+_FUND_TTL = 6 * 3600
+_prewarm_started = False
+
+
+def prewarm_fundamentals(symbols):
+    """Fill the fundamentals cache in a background daemon thread (one symbol
+    per second, gentle on Yahoo). Safe to call repeatedly; starts once."""
+    global _prewarm_started
+    if _prewarm_started:
+        return
+    _prewarm_started = True
+
+    def _run():
+        for s in symbols:
+            try:
+                equity_fundamentals(s)
+            except Exception as e:
+                print(f"prewarm {s} failed: {e}")
+            time.sleep(1)
+        print(f"fundamentals prewarm complete: {len(_fund_cache)} symbols cached")
+
+    threading.Thread(target=_run, daemon=True, name="fund-prewarm").start()
+
+
 def equity_fundamentals(symbol):
-    """Key fundamentals via yfinance .info (None on failure). Slow (~1-2s) —
-    callers should cache aggressively; these change quarterly, not hourly."""
+    """Key fundamentals via yfinance .info (None on failure). Cached in-module
+    for 6h; the app prewarms this cache in the background at startup."""
+    hit = _fund_cache.get(symbol)
+    if hit and time.time() - hit[0] < _FUND_TTL:
+        return hit[1]
     try:
         info = yf.Ticker(symbol).info or {}
     except Exception as e:
@@ -275,7 +305,7 @@ def equity_fundamentals(symbol):
                 rating, spread = _synthetic_rating(icr)
     except Exception as e:
         print(f"credit calc failed for {symbol}: {e}")
-    return {
+    result = {
         "icr": icr, "credit_rating": rating, "credit_spread": spread,
         "name": g("shortName") or symbol,
         "is_fund": bool(g("totalAssets")) and not g("totalDebt"),
@@ -288,6 +318,8 @@ def equity_fundamentals(symbol):
         "div_yield": g("dividendYield"), "beta": g("beta"),
         "wk52_low": g("fiftyTwoWeekLow"), "wk52_high": g("fiftyTwoWeekHigh"),
     }
+    _fund_cache[symbol] = (time.time(), result)
+    return result
 
 
 def live_fx_price(ticker):

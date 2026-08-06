@@ -158,6 +158,15 @@ def fundamentals(ticker):
 def us10y():
     return dp.us10y_yield()
 
+@st.cache_resource
+def _start_fundamentals_prewarm():
+    # Once per server process: background-fill the fundamentals cache so the
+    # first Scanner render doesn't pay ~1-2s per equity
+    dp.prewarm_fundamentals([c["ticker"] for c in WATCHLIST.values() if c["vol_proxy"] is None])
+    return True
+
+_start_fundamentals_prewarm()
+
 def _fmt_big(x):
     if x is None: return "—"
     for div, suf in ((1e12, "T"), (1e9, "B"), (1e6, "M")):
