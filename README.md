@@ -1,6 +1,5 @@
 # Pro FX & ETF Terminal (EURUSD edition)
 
-n> **Public repo note:** push alerts require setting an `NTFY_TOPIC` (GitHub Actions secret, Streamlit secret, or env var). No topic is baked into the code — pick a private, unguessable name.
 Quantitative FX + ETF scanning dashboard + backtester (Streamlit), migrated from a Gemini web-chat project on 2026-08-04.
 
 ## What it does
@@ -41,6 +40,9 @@ Alternative (local, no GitHub): schedule `scanner.py` with Windows Task Schedule
 - **FX:** set `OANDA_TOKEN` (free practice account at oanda.com → Manage API Access) → live OANDA candles + real FX tick volume replace delayed Yahoo data and the futures volume proxy. Set locally as an env var / `.streamlit/secrets.toml`, on Streamlit Cloud in app Settings → Secrets, and on GitHub as an `OANDA_TOKEN` Actions secret.
 - **ETFs:** real-time last price via Webull OpenAPI — reads `WEBULL_APP_KEY`/`WEBULL_APP_SECRET` env vars or the desk's key file in `~/Downloads`. Bars/signals stay on yfinance history; only the displayed price is live.
 Each pane shows its active data source; everything degrades gracefully to yfinance when no credentials are present.
+
+## Read-only guarantee
+This app **cannot execute trades**. `data_providers.py` is the only module that contacts broker APIs; every request is method-locked to GET and path-checked against an explicit read-only allowlist (OANDA candles/account reads, Webull market data). Any other endpoint raises `PermissionError` before a request is sent. The paper bot trades a JSON ledger only — it has no broker connection at all.
 
 ## Notes / known limitations
 - Without OANDA, yfinance FX data is delayed/indicative — fine for scanning, not for execution-grade fills.

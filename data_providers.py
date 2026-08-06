@@ -28,6 +28,28 @@ import requests
 import yfinance as yf
 
 # ---------------------------------------------------------------------------
+# READ-ONLY GUARD
+# This module is the only place in the project that talks to broker APIs.
+# Every request is method-locked to GET and its path must match the read-only
+# allowlist below, or the call raises before anything is sent. There is no
+# code path anywhere in this codebase that can place, modify, or cancel an
+# order — by construction, not convention.
+# ---------------------------------------------------------------------------
+_OANDA_READONLY_PATHS = (
+    "/v3/instruments/",   # candles / pricing history
+    "/v3/accounts",       # account list, summaries, open trades (GET only)
+)
+_WEBULL_READONLY_PATHS = (
+    "/market-data/",      # bars / quotes
+)
+
+
+def _assert_readonly(path, allowlist):
+    if not any(path.startswith(p) for p in allowlist):
+        raise PermissionError(f"Blocked non-read-only broker API path: {path}")
+
+
+# ---------------------------------------------------------------------------
 # OANDA (FX)
 # ---------------------------------------------------------------------------
 OANDA_INSTRUMENTS = {
@@ -71,6 +93,7 @@ def _oanda_base():
     if env in _OANDA_HOSTS:
         return _OANDA_HOSTS[env]
     if _oanda_detected_env is None:
+        _assert_readonly("/v3/accounts", _OANDA_READONLY_PATHS)
         for name, host in _OANDA_HOSTS.items():
             try:
                 r = requests.get(f"{host}/v3/accounts",
@@ -85,6 +108,7 @@ def _oanda_base():
 
 
 def _oanda_candles(instrument, granularity, count):
+    _assert_readonly(f"/v3/instruments/{instrument}/candles", _OANDA_READONLY_PATHS)
     resp = requests.get(
         f"{_oanda_base()}/v3/instruments/{instrument}/candles",
         params={"granularity": granularity, "count": count, "price": "M"},
@@ -193,6 +217,7 @@ def oanda_account():
     h = {"Authorization": f"Bearer {_oanda_token()}"}
     out = []
     try:
+        _assert_readonly("/v3/accounts", _OANDA_READONLY_PATHS)
         accounts = requests.get(f"{base}/v3/accounts", headers=h, timeout=15).json()["accounts"]
         for a in accounts:
             aid = a["id"]
@@ -286,6 +311,7 @@ def wb_bars(symbol, timespan, count):
         return pd.DataFrame()
     query = {"symbol": symbol, "category": "US_ETF", "timespan": timespan, "count": str(min(int(count), 1200))}
     uri = "/market-data/bars"
+    _assert_readonly(uri, _WEBULL_READONLY_PATHS)
     h = _wb_signed_headers(key, sec, uri, query)
     url = f"https://{_WB_HOST}{uri}?" + urlencode(query)
     with urllib.request.urlopen(urllib.request.Request(url, headers=h, method="GET"), timeout=15) as r:
@@ -309,6 +335,7 @@ def live_etf_price(symbol):
     query = {"symbol": symbol, "category": "US_ETF", "timespan": "M1", "count": "2"}
     uri = "/market-data/bars"
     try:
+        _assert_readonly(uri, _WEBULL_READONLY_PATHS)
         h = _wb_signed_headers(key, sec, uri, query)
         url = f"https://{_WB_HOST}{uri}?" + urlencode(query)
         with urllib.request.urlopen(urllib.request.Request(url, headers=h, method="GET"), timeout=10) as r:
