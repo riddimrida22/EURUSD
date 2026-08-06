@@ -161,8 +161,10 @@ def us10y():
 @st.cache_resource
 def _start_fundamentals_prewarm():
     # Once per server process: background-fill the fundamentals cache so the
-    # first Scanner render doesn't pay ~1-2s per equity
-    dp.prewarm_fundamentals([c["ticker"] for c in WATCHLIST.values() if c["vol_proxy"] is None])
+    # first Scanner render doesn't pay ~1-2s per equity. hasattr guard: a
+    # hot-reloaded app.py can briefly outrun a stale cached data_providers.
+    if hasattr(dp, "prewarm_fundamentals"):
+        dp.prewarm_fundamentals([c["ticker"] for c in WATCHLIST.values() if c["vol_proxy"] is None])
     return True
 
 _start_fundamentals_prewarm()
