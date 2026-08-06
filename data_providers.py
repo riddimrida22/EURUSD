@@ -140,7 +140,8 @@ def _oanda_candles(instrument, granularity, count):
 # yfinance fallback (both asset classes)
 # ---------------------------------------------------------------------------
 def _yf_pair(ticker):
-    df_1h = yf.download(ticker, period="1mo", interval="1h", progress=False)
+    # 3mo so equities get >200 hourly bars (SMA-200 needs warm-up even on fallback)
+    df_1h = yf.download(ticker, period="3mo", interval="1h", progress=False)
     df_1d = yf.download(ticker, period="6mo", interval="1d", progress=False)
     for df in (df_1h, df_1d):
         if isinstance(df.columns, pd.MultiIndex):

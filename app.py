@@ -76,6 +76,8 @@ WATCHLISTS = {
     "Hyperscalers": {s: _eq(s) for s in ("MSFT", "AMZN", "GOOGL", "META", "ORCL", "CRWV")},
     "Memory (semis tell)": {s: _eq(s) for s in ("MU", "SNDK")},
     "AI Picks & Shovels": {s: _eq(s) for s in ("NVDA", "AMD", "AVGO", "TSM", "ASML", "ANET", "VRT", "SMCI")},
+    "Software (SaaS & Security)": {s: _eq(s) for s in ("MSFT", "ORCL", "CRM", "NOW", "ADBE", "INTU",
+                                                       "PLTR", "SNOW", "CRWD", "PANW", "DDOG")},
 }
 
 # Flat, de-duplicated view: symbols appearing in several groups (NVDA, the
