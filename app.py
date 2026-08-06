@@ -283,7 +283,13 @@ def render_asset(pair, config):
             current_price, price_note = lp, "Webull (live)" if is_etf else "OANDA (live tick)"
     if tick_mode:
         price_note = "streaming ticks"
-    st.caption(f"Data: {data_source}" + (f" · Price: {price_note}" if price_note != data_source else ""))
+    _cap = f"Data: {data_source}" + (f" · Price: {price_note}" if price_note != data_source else "")
+    if is_etf:
+        from datetime import datetime as _dt, timezone as _tz
+        _u = _dt.now(_tz.utc)
+        if _u.weekday() < 5 and 0 <= _u.hour < 8:  # 8PM-4AM ET overnight session
+            _cap += " · ⚠️ overnight session: bars/price pause 8PM-4AM ET (Webull API limit)"
+    st.caption(_cap)
 
     # 2. Advanced Backtest Metrics
     total_trades, win_rate, profit_factor = run_backtest(df_1h)
