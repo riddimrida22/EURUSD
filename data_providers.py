@@ -260,6 +260,7 @@ def prewarm_fundamentals(symbols):
     _prewarm_started = True
 
     def _run():
+        time.sleep(45)  # let the first page render win the bandwidth race
         for s in symbols:
             try:
                 equity_fundamentals(s)
@@ -432,7 +433,7 @@ _WB_CHART_TF = {"5m": "M5", "15m": "M15", "1H": "M60", "4H": "M60", "1D": "D", "
 _OHLC_AGG = {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
 
 
-def _wb_get(key, sec, uri, query=None, retries=2):
+def _wb_get(key, sec, uri, query=None, retries=1):
     """Signed read-only GET against the Webull OpenAPI, with 429 backoff
     (the options desk polls the same account endpoints; quota is shared)."""
     import time as _time
@@ -517,9 +518,11 @@ def wb_bars(symbol, timespan, count):
     for cat in cats:
         query = {"symbol": symbol, "category": cat, "timespan": timespan, "count": str(min(int(count), 1200))}
         try:
+            # fail fast (no 429 backoff sleeps): bars must not stall page renders;
+            # the caller falls back to Yahoo instead
             h = _wb_signed_headers(key, sec, uri, query)
             url = f"https://{_WB_HOST}{uri}?" + urlencode(query)
-            with urllib.request.urlopen(urllib.request.Request(url, headers=h, method="GET"), timeout=15) as r:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=h, method="GET"), timeout=8) as r:
                 data = json.loads(r.read().decode() or "null")
         except Exception:
             continue
