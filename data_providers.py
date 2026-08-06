@@ -213,6 +213,31 @@ def fetch_asset(ticker, allow_live=True):
     return df_1h, df_1d, "Yahoo (delayed)"
 
 
+def equity_fundamentals(symbol):
+    """Key fundamentals via yfinance .info (None on failure). Slow (~1-2s) —
+    callers should cache aggressively; these change quarterly, not hourly."""
+    try:
+        info = yf.Ticker(symbol).info or {}
+    except Exception as e:
+        print(f"fundamentals fetch failed for {symbol}: {e}")
+        return None
+    if not info.get("marketCap") and not info.get("totalAssets"):
+        return None
+    g = info.get
+    return {
+        "name": g("shortName") or symbol,
+        "is_fund": bool(g("totalAssets")) and not g("totalDebt"),
+        "market_cap": g("marketCap") or g("totalAssets"),
+        "pe": g("trailingPE"), "fwd_pe": g("forwardPE"),
+        "ps": g("priceToSalesTrailing12Months"),
+        "total_debt": g("totalDebt"), "debt_to_equity": g("debtToEquity"),
+        "total_cash": g("totalCash"), "fcf": g("freeCashflow"),
+        "profit_margin": g("profitMargins"), "rev_growth": g("revenueGrowth"),
+        "div_yield": g("dividendYield"), "beta": g("beta"),
+        "wk52_low": g("fiftyTwoWeekLow"), "wk52_high": g("fiftyTwoWeekHigh"),
+    }
+
+
 def live_fx_price(ticker):
     """Latest 1-minute candle close from OANDA — effectively the live price.
     Returns None without a token or for non-FX tickers."""

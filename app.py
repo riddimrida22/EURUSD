@@ -147,6 +147,20 @@ def live_fx(ticker):
     # Latest OANDA 1-minute close (None without token / non-FX)
     return dp.live_fx_price(ticker)
 
+@st.cache_data(ttl=21600)
+def fundamentals(ticker):
+    # Quarterly-moving data; cached 6h
+    return dp.equity_fundamentals(ticker)
+
+def _fmt_big(x):
+    if x is None: return "—"
+    for div, suf in ((1e12, "T"), (1e9, "B"), (1e6, "M")):
+        if abs(x) >= div: return f"${x/div:,.2f}{suf}"
+    return f"${x:,.0f}"
+
+def _fmt_pct(x):
+    return f"{x*100:.1f}%" if x is not None else "—"
+
 @st.cache_data(ttl=60)
 def fetch_chart_data(ticker, tf, bars, live):
     # OHLCV at the user-selected display timeframe (60s so the forming bar moves)
@@ -467,6 +481,35 @@ def render_asset(pair, config):
     for _i in range(1, len(pane_rows) + 1):
         fig.update_layout(**{f"xaxis{'' if _i == 1 else _i}_rangeslider_visible": False})
     st.plotly_chart(fig, use_container_width=True)
+
+    # Fundamentals (equities only — FX pairs have no balance sheet)
+    if is_etf:
+        f = fundamentals(config['ticker'])
+        if f:
+            with st.expander(f"📊 Fundamentals — {f['name']}", expanded=True):
+                r1 = st.columns(5)
+                r1[0].metric("Market cap" if not f["is_fund"] else "Net assets", _fmt_big(f["market_cap"]))
+                r1[1].metric("P/E (trailing)", f"{f['pe']:.1f}" if f["pe"] else "—")
+                r1[2].metric("P/E (forward)", f"{f['fwd_pe']:.1f}" if f["fwd_pe"] else "—")
+                r1[3].metric("P/S", f"{f['ps']:.1f}" if f["ps"] else "—")
+                r1[4].metric("Beta", f"{f['beta']:.2f}" if f["beta"] else "—")
+                if not f["is_fund"]:
+                    r2 = st.columns(5)
+                    r2[0].metric("Total debt", _fmt_big(f["total_debt"]))
+                    r2[1].metric("Debt/Equity", f"{f['debt_to_equity']:.0f}%" if f["debt_to_equity"] else "—")
+                    r2[2].metric("Cash", _fmt_big(f["total_cash"]))
+                    r2[3].metric("Free cash flow", _fmt_big(f["fcf"]))
+                    r2[4].metric("Profit margin", _fmt_pct(f["profit_margin"]))
+                r3 = st.columns(5)
+                r3[0].metric("Revenue growth", _fmt_pct(f["rev_growth"]))
+                r3[1].metric("Dividend yield", _fmt_pct(f["div_yield"]))
+                r3[2].metric("52w low", f"{f['wk52_low']:.2f}" if f["wk52_low"] else "—")
+                r3[3].metric("52w high", f"{f['wk52_high']:.2f}" if f["wk52_high"] else "—")
+                if f["wk52_low"] and f["wk52_high"] and f["wk52_high"] > f["wk52_low"]:
+                    pos = (float(latest['Close']) - f["wk52_low"]) / (f["wk52_high"] - f["wk52_low"])
+                    r3[4].metric("Range position", f"{pos*100:.0f}%")
+        else:
+            st.caption("Fundamentals unavailable right now (Yahoo rate limit or unknown symbol).")
 
 # ---------------------------------------------------------
 # 5. LAYOUT: TABS
