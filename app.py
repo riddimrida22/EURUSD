@@ -73,10 +73,12 @@ chart_tf = st.sidebar.selectbox("Timeframe", ["5m", "15m", "1H", "4H", "1D", "1W
 chart_bars = st.sidebar.slider("Bars shown", 50, 400, 80, step=10)
 overlays = st.sidebar.multiselect(
     "Indicator overlays",
-    ["SMA 20", "SMA 50", "SMA 200", "EMA 21", "Bollinger (20,2)"],
+    ["SMA 20", "SMA 50", "SMA 200", "EMA 9", "EMA 21", "VWAP (day)",
+     "Bollinger (20,2)", "Keltner (20, 2xATR)", "Donchian 20", "Ichimoku Cloud"],
     default=[])
 show_volume = st.sidebar.checkbox("Volume pane", value=True)
 show_rsi = st.sidebar.checkbox("RSI pane", value=True)
+show_macd = st.sidebar.checkbox("MACD pane (12,26,9)", value=False)
 if chart_tf != "1H":
     st.sidebar.caption("Signals, metrics and backtests always run on 1H — other timeframes are chart views.")
 
@@ -300,7 +302,8 @@ def render_asset(pair, config):
     has_own_vol = 'Volume' in chart_df.columns and chart_df['Volume'].sum() > 0
     vol_ok = show_volume and (has_own_vol or chart_tf == "1H")
     if vol_ok: pane_rows.append(("volume", 0.16))
-    if show_rsi: pane_rows.append(("rsi", 0.24))
+    if show_rsi: pane_rows.append(("rsi", 0.20))
+    if show_macd: pane_rows.append(("macd", 0.20))
     heights = [h for _, h in pane_rows]
     heights[0] = round(1 - sum(heights[1:]), 2)
     row_of = {name: i + 1 for i, (name, _) in enumerate(pane_rows)}
@@ -314,6 +317,7 @@ def render_asset(pair, config):
         "SMA 20":  (lambda c: c.rolling(20).mean(),  dict(color='#FF9800')),
         "SMA 50":  (lambda c: c.rolling(50).mean(),  dict(color='#2196F3')),
         "SMA 200": (lambda c: c.rolling(200).mean(), dict(color='#E91E63')),
+        "EMA 9":   (lambda c: c.ewm(span=9, adjust=False).mean(), dict(color='#4DD0E1')),
         "EMA 21":  (lambda c: c.ewm(span=21, adjust=False).mean(), dict(color='#FFEB3B')),
     }
     for name in overlays:
@@ -327,6 +331,46 @@ def render_asset(pair, config):
         for band in (bb_mid + 2 * bb_sd, bb_mid - 2 * bb_sd):
             fig.add_trace(go.Scatter(x=chart_df.index, y=band.tail(chart_bars), mode='lines',
                                      line=dict(color='#78909C', dash='dot'), name='BB'), row=1, col=1)
+    if "Keltner (20, 2xATR)" in overlays:
+        k_mid = close_full.ewm(span=20, adjust=False).mean()
+        k_tr = pd.concat([full_df['High'] - full_df['Low'],
+                          (full_df['High'] - close_full.shift(1)).abs(),
+                          (full_df['Low'] - close_full.shift(1)).abs()], axis=1).max(axis=1)
+        k_atr = k_tr.rolling(20).mean()
+        fig.add_trace(go.Scatter(x=chart_df.index, y=k_mid.tail(chart_bars), mode='lines',
+                                 line=dict(color='#8D6E63'), name='Keltner mid'), row=1, col=1)
+        for band in (k_mid + 2 * k_atr, k_mid - 2 * k_atr):
+            fig.add_trace(go.Scatter(x=chart_df.index, y=band.tail(chart_bars), mode='lines',
+                                     line=dict(color='#8D6E63', dash='dot'), name='Keltner'), row=1, col=1)
+    if "Donchian 20" in overlays:
+        for series, nm in ((full_df['High'].rolling(20).max(), 'Donchian high'),
+                           (full_df['Low'].rolling(20).min(), 'Donchian low')):
+            fig.add_trace(go.Scatter(x=chart_df.index, y=series.tail(chart_bars), mode='lines',
+                                     line=dict(color='#AB47BC', dash='dash'), name=nm), row=1, col=1)
+    if "VWAP (day)" in overlays and 'Volume' in full_df.columns and full_df['Volume'].sum() > 0 and chart_tf in ("5m", "15m", "1H", "4H"):
+        _tp = (full_df['High'] + full_df['Low'] + close_full) / 3
+        _day = full_df.index.date
+        vwap = (_tp * full_df['Volume']).groupby(_day).cumsum() / full_df['Volume'].groupby(_day).cumsum()
+        fig.add_trace(go.Scatter(x=chart_df.index, y=vwap.tail(chart_bars), mode='lines',
+                                 line=dict(color='#26C6DA', dash='dashdot'), name='VWAP'), row=1, col=1)
+    if "Ichimoku Cloud" in overlays:
+        _hi, _lo = full_df['High'], full_df['Low']
+        tenkan = (_hi.rolling(9).max() + _lo.rolling(9).min()) / 2
+        kijun = (_hi.rolling(26).max() + _lo.rolling(26).min()) / 2
+        span_a = ((tenkan + kijun) / 2).shift(26)
+        span_b = ((_hi.rolling(52).max() + _lo.rolling(52).min()) / 2).shift(26)
+        chikou = close_full.shift(-26)
+        fig.add_trace(go.Scatter(x=chart_df.index, y=span_b.tail(chart_bars), mode='lines',
+                                 line=dict(color='rgba(239,83,80,0.5)', width=1), name='Senkou B'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=chart_df.index, y=span_a.tail(chart_bars), mode='lines',
+                                 line=dict(color='rgba(38,166,154,0.5)', width=1), name='Senkou A',
+                                 fill='tonexty', fillcolor='rgba(120,144,156,0.18)'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=chart_df.index, y=tenkan.tail(chart_bars), mode='lines',
+                                 line=dict(color='#EF5350', width=1.4), name='Tenkan (9)'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=chart_df.index, y=kijun.tail(chart_bars), mode='lines',
+                                 line=dict(color='#42A5F5', width=1.4), name='Kijun (26)'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=chart_df.index, y=chikou.tail(chart_bars), mode='lines',
+                                 line=dict(color='#9E9E9E', dash='dot', width=1), name='Chikou'), row=1, col=1)
 
     # Strategy overlays + signal markers belong to the 1H system timeframe only
     if chart_tf == "1H":
@@ -370,6 +414,15 @@ def render_asset(pair, config):
         fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df['RSI'], mode='lines', line=dict(color='#9E9E9E')), row=row_of['rsi'], col=1)
         fig.add_hline(y=70, line_dash="dash", line_color="#ef5350", row=row_of['rsi'], col=1)
         fig.add_hline(y=30, line_dash="dash", line_color="#26a69a", row=row_of['rsi'], col=1)
+
+    if show_macd:
+        macd_line = close_full.ewm(span=12, adjust=False).mean() - close_full.ewm(span=26, adjust=False).mean()
+        macd_sig = macd_line.ewm(span=9, adjust=False).mean()
+        macd_hist = (macd_line - macd_sig).tail(chart_bars)
+        hist_colors = np.where(macd_hist >= 0, '#26a69a', '#ef5350')
+        fig.add_trace(go.Bar(x=chart_df.index, y=macd_hist, marker_color=hist_colors, name='MACD hist'), row=row_of['macd'], col=1)
+        fig.add_trace(go.Scatter(x=chart_df.index, y=macd_line.tail(chart_bars), mode='lines', line=dict(color='#42A5F5', width=1.2), name='MACD'), row=row_of['macd'], col=1)
+        fig.add_trace(go.Scatter(x=chart_df.index, y=macd_sig.tail(chart_bars), mode='lines', line=dict(color='#FF9800', width=1.2), name='Signal'), row=row_of['macd'], col=1)
 
     fig.update_layout(template="plotly_dark", height=620 + 80 * (len(pane_rows) - 1),
                       margin=dict(l=10, r=10, t=10, b=10), showlegend=True)
