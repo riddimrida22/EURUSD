@@ -36,6 +36,15 @@ WATCHLIST = {
     "USD/CAD": {"ticker": "USDCAD=X", "strategy": "Momentum Breakout"},
     "SPY (S&P 500)": {"ticker": "SPY", "strategy": "Equity Pullback (Buy the Dip)"},
     "QQQ (Nasdaq)": {"ticker": "QQQ", "strategy": "Equity Pullback (Buy the Dip)"},
+    "AAPL": {"ticker": "AAPL", "strategy": "Equity Pullback (Buy the Dip)"},
+    "MSFT": {"ticker": "MSFT", "strategy": "Equity Pullback (Buy the Dip)"},
+    "GOOGL": {"ticker": "GOOGL", "strategy": "Equity Pullback (Buy the Dip)"},
+    "AMZN": {"ticker": "AMZN", "strategy": "Equity Pullback (Buy the Dip)"},
+    "NVDA": {"ticker": "NVDA", "strategy": "Equity Pullback (Buy the Dip)"},
+    "META": {"ticker": "META", "strategy": "Equity Pullback (Buy the Dip)"},
+    "TSLA": {"ticker": "TSLA", "strategy": "Equity Pullback (Buy the Dip)"},
+    "MU": {"ticker": "MU", "strategy": "Equity Pullback (Buy the Dip)"},
+    "SNDK": {"ticker": "SNDK", "strategy": "Equity Pullback (Buy the Dip)"},
 }
 
 STATE_FILE = os.environ.get(
@@ -118,7 +127,7 @@ def apply_strategies(df, pair):
         breakout = df['Close'] > df['Rolling_High_20']
         df['Signal'] = breakout & (~breakout.shift(1, fill_value=False))
 
-    elif pair in ["SPY (S&P 500)", "QQQ (Nasdaq)"]:
+    elif "/" not in pair:  # all equities run the pullback strategy
         df['SMA_20'] = df['Close'].rolling(window=20).mean()
         df['Std_Dev'] = df['Close'].rolling(window=20).std()
         df['Lower_Band'] = df['SMA_20'] - (df['Std_Dev'] * 2)

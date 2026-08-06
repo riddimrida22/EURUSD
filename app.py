@@ -50,7 +50,18 @@ WATCHLIST = {
     "USD/JPY": {"ticker": "USDJPY=X", "strategy": "Trend Following", "vol_proxy": "6J=F"},
     "USD/CAD": {"ticker": "USDCAD=X", "strategy": "Momentum Breakout", "vol_proxy": "6C=F"},
     "SPY (S&P 500)": {"ticker": "SPY", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None},
-    "QQQ (Nasdaq)": {"ticker": "QQQ", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None}
+    "QQQ (Nasdaq)": {"ticker": "QQQ", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None},
+    # Magnificent 7
+    "AAPL": {"ticker": "AAPL", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None},
+    "MSFT": {"ticker": "MSFT", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None},
+    "GOOGL": {"ticker": "GOOGL", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None},
+    "AMZN": {"ticker": "AMZN", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None},
+    "NVDA": {"ticker": "NVDA", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None},
+    "META": {"ticker": "META", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None},
+    "TSLA": {"ticker": "TSLA", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None},
+    # Memory stocks (the semis-lead-QQQ tell)
+    "MU": {"ticker": "MU", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None},
+    "SNDK": {"ticker": "SNDK", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None}
 }
 
 st.sidebar.header("📊 Chart Settings")
@@ -157,7 +168,7 @@ def apply_strategies(df, pair):
         breakout = df['Close'] > df['Rolling_High_20']
         df['Signal'] = breakout & (~breakout.shift(1, fill_value=False))
 
-    elif pair in ["SPY (S&P 500)", "QQQ (Nasdaq)"]:
+    elif "/" not in pair:  # all equities run the pullback strategy
         df['SMA_20'] = df['Close'].rolling(window=20).mean()
         df['Std_Dev'] = df['Close'].rolling(window=20).std()
         df['Lower_Band'] = df['SMA_20'] - (df['Std_Dev'] * 2)

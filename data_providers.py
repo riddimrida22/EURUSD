@@ -304,45 +304,46 @@ _WB_CHART_TF = {"5m": "M5", "15m": "M15", "1H": "M60", "4H": "M60", "1D": "D", "
 _OHLC_AGG = {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
 
 
+_wb_category_cache = {}  # symbol -> "US_STOCK" | "US_ETF", learned on first success
+
+
 def wb_bars(symbol, timespan, count):
     """Webull OpenAPI candles (real-time, includes pre/after-market) as a
-    DataFrame. Empty frame when credentials or data are unavailable."""
+    DataFrame. Tries US_STOCK then US_ETF and remembers which one the symbol
+    is. Empty frame when credentials or data are unavailable."""
     key, sec = _wb_load_keys()
     if not key:
         return pd.DataFrame()
-    query = {"symbol": symbol, "category": "US_ETF", "timespan": timespan, "count": str(min(int(count), 1200))}
     uri = "/market-data/bars"
     _assert_readonly(uri, _WEBULL_READONLY_PATHS)
-    h = _wb_signed_headers(key, sec, uri, query)
-    url = f"https://{_WB_HOST}{uri}?" + urlencode(query)
-    with urllib.request.urlopen(urllib.request.Request(url, headers=h, method="GET"), timeout=15) as r:
-        data = json.loads(r.read().decode() or "null")
-    rows = [{"Time": b["time"], "Open": float(b["open"]), "High": float(b["high"]),
-             "Low": float(b["low"]), "Close": float(b["close"]), "Volume": float(b.get("volume") or 0)}
-            for b in (data if isinstance(data, list) else [])]
-    df = pd.DataFrame(rows)
-    if df.empty:
-        return df
-    df["Time"] = pd.to_datetime(df["Time"], format="ISO8601", utc=True)
-    return df.set_index("Time").sort_index()
+    cats = [_wb_category_cache[symbol]] if symbol in _wb_category_cache else ["US_STOCK", "US_ETF"]
+    for cat in cats:
+        query = {"symbol": symbol, "category": cat, "timespan": timespan, "count": str(min(int(count), 1200))}
+        try:
+            h = _wb_signed_headers(key, sec, uri, query)
+            url = f"https://{_WB_HOST}{uri}?" + urlencode(query)
+            with urllib.request.urlopen(urllib.request.Request(url, headers=h, method="GET"), timeout=15) as r:
+                data = json.loads(r.read().decode() or "null")
+        except Exception:
+            continue
+        rows = [{"Time": b["time"], "Open": float(b["open"]), "High": float(b["high"]),
+                 "Low": float(b["low"]), "Close": float(b["close"]), "Volume": float(b.get("volume") or 0)}
+                for b in (data if isinstance(data, list) else [])]
+        if rows:
+            _wb_category_cache[symbol] = cat
+            df = pd.DataFrame(rows)
+            df["Time"] = pd.to_datetime(df["Time"], format="ISO8601", utc=True)
+            return df.set_index("Time").sort_index()
+    return pd.DataFrame()
 
 
 def live_etf_price(symbol):
-    """Real-time last price for an ETF via Webull OpenAPI (includes pre/after
-    market). Returns None when credentials or data are unavailable."""
-    key, sec = _wb_load_keys()
-    if not key:
-        return None
-    query = {"symbol": symbol, "category": "US_ETF", "timespan": "M1", "count": "2"}
-    uri = "/market-data/bars"
+    """Real-time last price for a stock/ETF via Webull OpenAPI (includes
+    pre/after market). Returns None when credentials or data are unavailable."""
     try:
-        _assert_readonly(uri, _WEBULL_READONLY_PATHS)
-        h = _wb_signed_headers(key, sec, uri, query)
-        url = f"https://{_WB_HOST}{uri}?" + urlencode(query)
-        with urllib.request.urlopen(urllib.request.Request(url, headers=h, method="GET"), timeout=10) as r:
-            data = json.loads(r.read().decode() or "null")
-        if isinstance(data, list) and data:
-            return float(data[-1]["close"])
+        df = wb_bars(symbol, "M1", 2)
+        if not df.empty:
+            return float(df["Close"].iloc[-1])
     except Exception as e:
         print(f"Webull live price failed for {symbol}: {e}")
     return None
