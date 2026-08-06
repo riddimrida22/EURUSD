@@ -27,25 +27,30 @@ import data_providers as dp
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-WATCHLIST = {
-    "EUR/USD": {"ticker": "EURUSD=X", "strategy": "Trend Following"},
-    "EUR/GBP": {"ticker": "EURGBP=X", "strategy": "Mean Reversion"},
-    "GBP/JPY": {"ticker": "GBPJPY=X", "strategy": "Trend Following"},
-    "EUR/JPY": {"ticker": "EURJPY=X", "strategy": "Trend Following"},
-    "USD/JPY": {"ticker": "USDJPY=X", "strategy": "Trend Following"},
-    "USD/CAD": {"ticker": "USDCAD=X", "strategy": "Momentum Breakout"},
-    "SPY (S&P 500)": {"ticker": "SPY", "strategy": "Equity Pullback (Buy the Dip)"},
-    "QQQ (Nasdaq)": {"ticker": "QQQ", "strategy": "Equity Pullback (Buy the Dip)"},
-    "AAPL": {"ticker": "AAPL", "strategy": "Equity Pullback (Buy the Dip)"},
-    "MSFT": {"ticker": "MSFT", "strategy": "Equity Pullback (Buy the Dip)"},
-    "GOOGL": {"ticker": "GOOGL", "strategy": "Equity Pullback (Buy the Dip)"},
-    "AMZN": {"ticker": "AMZN", "strategy": "Equity Pullback (Buy the Dip)"},
-    "NVDA": {"ticker": "NVDA", "strategy": "Equity Pullback (Buy the Dip)"},
-    "META": {"ticker": "META", "strategy": "Equity Pullback (Buy the Dip)"},
-    "TSLA": {"ticker": "TSLA", "strategy": "Equity Pullback (Buy the Dip)"},
-    "MU": {"ticker": "MU", "strategy": "Equity Pullback (Buy the Dip)"},
-    "SNDK": {"ticker": "SNDK", "strategy": "Equity Pullback (Buy the Dip)"},
+def _eq(sym):
+    return {"ticker": sym, "strategy": "Equity Pullback (Buy the Dip)"}
+
+WATCHLISTS = {
+    "FX Majors": {
+        "EUR/USD": {"ticker": "EURUSD=X", "strategy": "Trend Following"},
+        "EUR/GBP": {"ticker": "EURGBP=X", "strategy": "Mean Reversion"},
+        "GBP/JPY": {"ticker": "GBPJPY=X", "strategy": "Trend Following"},
+        "EUR/JPY": {"ticker": "EURJPY=X", "strategy": "Trend Following"},
+        "USD/JPY": {"ticker": "USDJPY=X", "strategy": "Trend Following"},
+        "USD/CAD": {"ticker": "USDCAD=X", "strategy": "Momentum Breakout"},
+    },
+    "Index ETFs": {"SPY (S&P 500)": _eq("SPY"), "QQQ (Nasdaq)": _eq("QQQ")},
+    "Magnificent 7": {s: _eq(s) for s in ("AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA")},
+    "Hyperscalers": {s: _eq(s) for s in ("MSFT", "AMZN", "GOOGL", "META", "ORCL", "CRWV")},
+    "Memory (semis tell)": {s: _eq(s) for s in ("MU", "SNDK")},
+    "AI Picks & Shovels": {s: _eq(s) for s in ("NVDA", "AMD", "AVGO", "TSM", "ASML", "ANET", "VRT", "SMCI")},
 }
+
+# Flat, de-duplicated: overlapping symbols are scanned and alerted only once
+WATCHLIST = {}
+for _g_assets in WATCHLISTS.values():
+    for _k, _v in _g_assets.items():
+        WATCHLIST.setdefault(_k, _v)
 
 STATE_FILE = os.environ.get(
     "FX_STATE_FILE", os.path.join(os.path.dirname(os.path.abspath(__file__)), "alert_state.json"))

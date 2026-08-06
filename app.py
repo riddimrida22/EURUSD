@@ -41,28 +41,32 @@ if _qp_live != ("1" if live_mode else "0"):
 
 # Spot FX has no centralized volume (Yahoo reports 0), so each pair maps a CME
 # currency future whose volume serves as an activity proxy for the volume pane.
-# ETFs (vol_proxy None) have real exchange volume and use their own.
-WATCHLIST = {
-    "EUR/USD": {"ticker": "EURUSD=X", "strategy": "Trend Following", "vol_proxy": "6E=F"},
-    "EUR/GBP": {"ticker": "EURGBP=X", "strategy": "Mean Reversion", "vol_proxy": "6E=F"},
-    "GBP/JPY": {"ticker": "GBPJPY=X", "strategy": "Trend Following", "vol_proxy": "6J=F"},
-    "EUR/JPY": {"ticker": "EURJPY=X", "strategy": "Trend Following", "vol_proxy": "6J=F"},
-    "USD/JPY": {"ticker": "USDJPY=X", "strategy": "Trend Following", "vol_proxy": "6J=F"},
-    "USD/CAD": {"ticker": "USDCAD=X", "strategy": "Momentum Breakout", "vol_proxy": "6C=F"},
-    "SPY (S&P 500)": {"ticker": "SPY", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None},
-    "QQQ (Nasdaq)": {"ticker": "QQQ", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None},
-    # Magnificent 7
-    "AAPL": {"ticker": "AAPL", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None},
-    "MSFT": {"ticker": "MSFT", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None},
-    "GOOGL": {"ticker": "GOOGL", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None},
-    "AMZN": {"ticker": "AMZN", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None},
-    "NVDA": {"ticker": "NVDA", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None},
-    "META": {"ticker": "META", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None},
-    "TSLA": {"ticker": "TSLA", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None},
-    # Memory stocks (the semis-lead-QQQ tell)
-    "MU": {"ticker": "MU", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None},
-    "SNDK": {"ticker": "SNDK", "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None}
+# Equities (vol_proxy None) have real exchange volume and use their own.
+def _eq(sym):
+    return {"ticker": sym, "strategy": "Equity Pullback (Buy the Dip)", "vol_proxy": None}
+
+WATCHLISTS = {
+    "FX Majors": {
+        "EUR/USD": {"ticker": "EURUSD=X", "strategy": "Trend Following", "vol_proxy": "6E=F"},
+        "EUR/GBP": {"ticker": "EURGBP=X", "strategy": "Mean Reversion", "vol_proxy": "6E=F"},
+        "GBP/JPY": {"ticker": "GBPJPY=X", "strategy": "Trend Following", "vol_proxy": "6J=F"},
+        "EUR/JPY": {"ticker": "EURJPY=X", "strategy": "Trend Following", "vol_proxy": "6J=F"},
+        "USD/JPY": {"ticker": "USDJPY=X", "strategy": "Trend Following", "vol_proxy": "6J=F"},
+        "USD/CAD": {"ticker": "USDCAD=X", "strategy": "Momentum Breakout", "vol_proxy": "6C=F"},
+    },
+    "Index ETFs": {"SPY (S&P 500)": _eq("SPY"), "QQQ (Nasdaq)": _eq("QQQ")},
+    "Magnificent 7": {s: _eq(s) for s in ("AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA")},
+    "Hyperscalers": {s: _eq(s) for s in ("MSFT", "AMZN", "GOOGL", "META", "ORCL", "CRWV")},
+    "Memory (semis tell)": {s: _eq(s) for s in ("MU", "SNDK")},
+    "AI Picks & Shovels": {s: _eq(s) for s in ("NVDA", "AMD", "AVGO", "TSM", "ASML", "ANET", "VRT", "SMCI")},
 }
+
+# Flat, de-duplicated view: symbols appearing in several groups (NVDA, the
+# cloud giants) are fetched, scanned and alerted only once.
+WATCHLIST = {}
+for _g_assets in WATCHLISTS.values():
+    for _k, _v in _g_assets.items():
+        WATCHLIST.setdefault(_k, _v)
 
 st.sidebar.header("📊 Chart Settings")
 chart_tf = st.sidebar.selectbox("Timeframe", ["5m", "15m", "1H", "4H", "1D", "1W"], index=2)
@@ -383,8 +387,10 @@ def fetch_oanda_account():
 tab_chart, tab_pos, tab_scan = st.tabs(["📈 Chart", "💼 Positions & Account", "🔎 Scanner"])
 
 with tab_chart:
-    sel_pair = st.selectbox("Pair / asset", list(WATCHLIST.keys()))
-    render_asset(sel_pair, WATCHLIST[sel_pair])
+    c_wl, c_asset = st.columns([1, 2])
+    sel_group = c_wl.selectbox("Watchlist", list(WATCHLISTS.keys()))
+    sel_pair = c_asset.selectbox("Asset", list(WATCHLISTS[sel_group].keys()))
+    render_asset(sel_pair, WATCHLISTS[sel_group][sel_pair])
 
 with tab_pos:
     st.subheader("🤖 Paper bot")
@@ -421,8 +427,7 @@ with tab_pos:
         st.info("Set OANDA_TOKEN (env / secrets / Downloads token file) to see live account data.")
 
 with tab_scan:
-    scan_rows = []
-    for _p, _cfg in WATCHLIST.items():
+    def _scan_row(_p, _cfg):
         try:
             _d1h, _d1d, _src = fetch_data(_cfg['ticker'], live_mode)
             _d1h = calculate_indicators(_d1h)
@@ -431,10 +436,13 @@ with tab_scan:
             _n, _wr, _pf = run_backtest(_d1h)
             _trend = "🟢 Bullish" if float(_d1d['Close'].iloc[-1]) > float(_d1d['Close'].rolling(50).mean().iloc[-1]) else "🔴 Bearish"
             _px = ".2f" if _cfg['vol_proxy'] is None else ".4f"
-            scan_rows.append({
-                "Asset": _p, "Strategy": _cfg['strategy'], "Price": f"{float(_lt['Close']):{_px}}",
-                "Daily trend": _trend, "Signal (2 bars)": "🚨 YES" if bool(_d1h['Signal'].tail(2).any()) else "—",
-                "Win rate %": round(_wr, 1), "Profit factor": round(_pf, 2), "Data": _src})
+            return {"Asset": _p, "Strategy": _cfg['strategy'], "Price": f"{float(_lt['Close']):{_px}}",
+                    "Daily trend": _trend, "Signal (2 bars)": "🚨 YES" if bool(_d1h['Signal'].tail(2).any()) else "—",
+                    "Win rate %": round(_wr, 1), "Profit factor": round(_pf, 2), "Data": _src}
         except Exception as _e:
-            scan_rows.append({"Asset": _p, "Strategy": _cfg['strategy'], "Data": f"error: {_e}"})
-    st.dataframe(pd.DataFrame(scan_rows), use_container_width=True, hide_index=True)
+            return {"Asset": _p, "Strategy": _cfg['strategy'], "Data": f"error: {_e}"}
+
+    for _gname, _g_assets in WATCHLISTS.items():
+        st.subheader(_gname)
+        st.dataframe(pd.DataFrame([_scan_row(_p, _cfg) for _p, _cfg in _g_assets.items()]),
+                     use_container_width=True, hide_index=True)
