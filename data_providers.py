@@ -53,6 +53,7 @@ def _assert_readonly(path, allowlist):
 # OANDA (FX)
 # ---------------------------------------------------------------------------
 OANDA_INSTRUMENTS = {
+    "EURUSD=X": "EUR_USD",
     "EURGBP=X": "EUR_GBP",
     "GBPJPY=X": "GBP_JPY",
     "EURJPY=X": "EUR_JPY",
@@ -161,7 +162,7 @@ def fetch_chart(ticker, tf="1H", bars=80, allow_live=True):
                 return df, "OANDA (live)"
         except Exception as e:
             print(f"OANDA chart fetch failed for {inst} {tf} ({e}); falling back to Yahoo")
-    if allow_live and inst is None:  # ETFs: real-time bars via Webull OpenAPI
+    if allow_live and inst is None and not ticker.endswith("=X"):  # ETFs only
         try:
             fetch_n = count * 4 if tf == "4H" else count * 5 if tf == "1W" else count
             df = wb_bars(ticker, _WB_CHART_TF[tf], fetch_n)
@@ -196,7 +197,7 @@ def fetch_asset(ticker, allow_live=True):
                 return df_1h, df_1d, "OANDA (live)"
         except Exception as e:
             print(f"OANDA fetch failed for {inst} ({e}); falling back to Yahoo")
-    if allow_live and inst is None:  # ETFs: real-time bars via Webull OpenAPI
+    if allow_live and inst is None and not ticker.endswith("=X"):  # ETFs only
         try:
             df_1h = wb_bars(ticker, "M60", 720)
             df_1d = wb_bars(ticker, "D", 180)
