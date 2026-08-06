@@ -154,6 +154,10 @@ def fundamentals(ticker):
     # Quarterly-moving data; cached 6h
     return dp.equity_fundamentals(ticker)
 
+@st.cache_data(ttl=3600)
+def us10y():
+    return dp.us10y_yield()
+
 def _fmt_big(x):
     if x is None: return "—"
     for div, suf in ((1e12, "T"), (1e9, "B"), (1e6, "M")):
@@ -504,9 +508,13 @@ def render_asset(pair, config):
                     r2[4].metric("Profit margin", _fmt_pct(f["profit_margin"]))
                     rc = st.columns(5)
                     rc[0].metric("Credit rating (synthetic)", f.get("credit_rating") or "—")
-                    rc[1].metric("Est. debt spread", f"+{f['credit_spread']:.2f}%" if f.get("credit_spread") else "—")
+                    rc[1].metric("Est. spread vs US 10Y", f"+{f['credit_spread']:.2f}%" if f.get("credit_spread") else "—")
                     _icr = f.get("icr")
                     rc[2].metric("Interest coverage", "∞" if _icr == float("inf") else (f"{_icr:.1f}x" if _icr else "—"))
+                    _y10 = us10y()
+                    rc[3].metric("US 10Y", f"{_y10:.2f}%" if _y10 else "—")
+                    if _y10 and f.get("credit_spread") is not None:
+                        rc[4].metric("Implied cost of debt", f"{_y10 + f['credit_spread']:.2f}%")
                     st.caption("Credit rating is *synthetic* — derived from interest coverage (EBIT ÷ interest expense) "
                                "via the Damodaran mapping, with the typical spread over treasuries at that tier. "
                                "It is NOT an S&P/Moody's rating.")
@@ -631,9 +639,20 @@ with tab_scan:
             _n, _wr, _pf = run_backtest(_d1h)
             _trend = "🟢 Bullish" if float(_d1d['Close'].iloc[-1]) > float(_d1d['Close'].rolling(50).mean().iloc[-1]) else "🔴 Bearish"
             _px = ".2f" if _cfg['vol_proxy'] is None else ".4f"
-            return {"Asset": _link, "Strategy": _cfg['strategy'], "Price": f"{float(_lt['Close']):{_px}}",
+            _row = {"Asset": _link, "Strategy": _cfg['strategy'], "Price": f"{float(_lt['Close']):{_px}}",
                     "Daily trend": _trend, "Signal (2 bars)": "🚨 YES" if bool(_d1h['Signal'].tail(2).any()) else "—",
                     "Win rate %": round(_wr, 1), "Profit factor": round(_pf, 2), "Data": _src}
+            if _cfg['vol_proxy'] is None:  # equities: fundamentals columns
+                _f = fundamentals(_cfg['ticker'])
+                if _f:
+                    _row.update({
+                        "Mcap": _fmt_big(_f["market_cap"]),
+                        "P/E": round(_f["pe"], 1) if _f["pe"] else None,
+                        "FCF": _fmt_big(_f["fcf"]) if _f["fcf"] else "—",
+                        "Credit": _f.get("credit_rating") or "—",
+                        "Spread vs 10Y": f"+{_f['credit_spread']:.2f}%" if _f.get("credit_spread") else "—",
+                    })
+            return _row
         except Exception as _e:
             return {"Asset": _link, "Strategy": _cfg['strategy'], "Data": f"error: {_e}"}
 

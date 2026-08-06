@@ -231,6 +231,19 @@ def _synthetic_rating(icr):
     return "D", 15.12
 
 
+def us10y_yield():
+    """Current US 10-year treasury yield in percent (^TNX), or None."""
+    try:
+        df = yf.download("^TNX", period="5d", interval="1d", progress=False)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        y = float(df["Close"].dropna().iloc[-1])
+        return y / 10 if y > 20 else y  # guard against x10-scaled quotes
+    except Exception as e:
+        print(f"10Y fetch failed: {e}")
+        return None
+
+
 def equity_fundamentals(symbol):
     """Key fundamentals via yfinance .info (None on failure). Slow (~1-2s) —
     callers should cache aggressively; these change quarterly, not hourly."""
