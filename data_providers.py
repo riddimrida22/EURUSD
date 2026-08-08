@@ -61,10 +61,12 @@ def _assert_readonly(path, allowlist):
 OANDA_INSTRUMENTS = {
     "EURUSD=X": "EUR_USD",
     "EURGBP=X": "EUR_GBP",
+    "GBPUSD=X": "GBP_USD",
     "GBPJPY=X": "GBP_JPY",
     "EURJPY=X": "EUR_JPY",
     "USDJPY=X": "USD_JPY",
     "USDCAD=X": "USD_CAD",
+    "USDMXN=X": "USD_MXN",
 }
 
 
