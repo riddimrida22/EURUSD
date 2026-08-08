@@ -6,6 +6,10 @@
 Quantitative FX + ETF scanning dashboard + backtester (Streamlit), migrated from a Gemini web-chat project on 2026-08-04.
 
 ## What it does
+- **Live session banner (the "prompter")** — tracks the New York clock (US/Eastern via `pytz`) and shows a color-coded banner saying which global session is active (London / NY open / 8:30 catalyst window / peak overlap / London Fix / danger zone / Asia) and what the institutional flow is doing right now.
+- **⚡ Intraday (Magic Hours) tab** — 15-minute momentum + Donchian breakout status for EUR/USD, GBP/USD and USD/JPY, for day-trading the London/New York overlap.
+- **🌍 Macro (Carry & Hedging) tab** — MXN/JPY carry-trade calculator with a partial USD/MXN proxy flash-crash hedge: enter account size + hedge ratio, get exact OANDA unit sizes (uses the live USD/MXN rate).
+- **🛒 ETFs (Pullbacks) tab** — dedicated SPY/QQQ "buy the dip" view (close below lower Bollinger Band + RSI < 30 while above the 200-day SMA).
 - **Multi-asset routing** — a tailored strategy per instrument:
   - `EUR/GBP` — Mean Reversion (fractal swing-low floors + bullish engulfing)
   - `GBP/JPY`, `USD/JPY` — Trend Following (20/50 SMA crossover)

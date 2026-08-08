@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import datetime
 
 import streamlit as st
 import yfinance as yf
@@ -7,6 +8,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import pytz
 import requests
 
 import data_providers as dp
@@ -26,6 +28,55 @@ try:
             os.environ[_k] = str(st.secrets[_k])
 except Exception:
     pass  # no secrets file locally
+
+# ---------------------------------------------------------
+# 0a. LIVE SESSION AWARENESS ENGINE (THE "PROMPTER")
+# ---------------------------------------------------------
+# Tracks the clock in New York and tells you what the institutional flow is
+# doing right now. Uses the server clock converted to US/Eastern, so it is
+# correct wherever the app is hosted (Streamlit Cloud runs on UTC).
+def get_live_session_insight():
+    tz = pytz.timezone("US/Eastern")
+    now = datetime.now(tz)
+    time_float = now.hour + (now.minute / 60.0)
+    time_str = now.strftime("%I:%M %p ET")
+
+    if 3.0 <= time_float < 8.0:
+        status, icon = "🇬🇧 London Session Active", "info"
+        insight = ("Establishing the morning trend. Watch for New York to either accelerate "
+                   "or 'fade' (reverse) this move right at 8:00 AM.")
+    elif 8.0 <= time_float < 8.5:
+        status, icon = "⚠️ New York Open (Pre-News)", "warning"
+        insight = ("Wall Street is waking up. DO NOT front-run the 8:30 AM economic data "
+                   "release. Spreads will widen violently. Stand by.")
+    elif 8.5 <= time_float < 9.5:
+        status, icon = "🚨 The 8:30 AM Catalyst Window", "error"
+        insight = ("Data released! Let the algorithmic dust settle for 5-10 minutes to avoid "
+                   "the 'fake-out', then trade the breakout on EUR/USD or GBP/USD.")
+    elif 9.5 <= time_float < 11.0:
+        status, icon = "📈 US Equities Open (Peak Overlap)", "success"
+        insight = ("Maximum global liquidity. Hedge funds are rebalancing stocks and "
+                   "converting currencies. Ride the dominant momentum.")
+    elif 11.0 <= time_float < 12.0:
+        status, icon = "⏳ The London Fix", "warning"
+        insight = ("London is closing its books. Prepare for sudden, erratic volume spikes. "
+                   "Look to close intraday day trades by noon.")
+    elif 12.0 <= time_float < 17.0:
+        status, icon = "🏜️ The Danger Zone", "error"
+        insight = ("London has gone home. Volume is dead. Algorithms are hunting stops in "
+                   "tight ranges. Step away from intraday charts.")
+    else:
+        status, icon = "🌏 Asian Session Active", "info"
+        insight = ("Quiet market. Focus on JPY crosses (USD/JPY, AUD/JPY). Look for "
+                   "predictable mean-reversion ranges.")
+
+    return time_str, status, insight, icon
+
+_sess_time, _sess_status, _sess_insight, _sess_icon = get_live_session_insight()
+st.markdown(f"### 🕒 Local Market Time: {_sess_time}")
+{"info": st.info, "warning": st.warning, "error": st.error,
+ "success": st.success}[_sess_icon](f"**{_sess_status}:** {_sess_insight}")
+st.divider()
 
 # ---------------------------------------------------------
 # 0. SIDEBAR: ACCOUNT, RISK, & TELEGRAM SETTINGS
@@ -570,7 +621,9 @@ if _qp_asset:
             break
     del st.query_params["asset"]
 
-tab_chart, tab_pos, tab_scan = st.tabs(["📈 Chart", "💼 Positions & Account", "🔎 Scanner"])
+tab_chart, tab_pos, tab_scan, tab_intra, tab_macro, tab_etf = st.tabs(
+    ["📈 Chart", "💼 Positions & Account", "🔎 Scanner",
+     "⚡ Intraday (Magic Hours)", "🌍 Macro (Carry & Hedging)", "🛒 ETFs (Pullbacks)"])
 
 with tab_chart:
     c_wl, c_asset = st.columns([1, 2])
@@ -678,3 +731,121 @@ with tab_scan:
         st.dataframe(pd.DataFrame([_scan_row(_p, _cfg) for _p, _cfg in _g_assets.items()]),
                      use_container_width=True, hide_index=True,
                      column_config={"Asset": st.column_config.LinkColumn("Asset", display_text=r"#(.+)$")})
+
+# ==========================================
+# TAB 4: INTRADAY DAY TRADING (MAGIC HOURS)
+# ==========================================
+with tab_intra:
+    st.subheader("The Big Three: Intraday Momentum")
+    st.caption("15-minute breakout status for the London/New York overlap. "
+               "Live OANDA candles when the sidebar Live-data toggle is on; delayed Yahoo otherwise.")
+    day_trade_pairs = {"EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "USDJPY=X"}
+
+    _intra_cols = st.columns(3)
+    for _idx, (_ipair, _iticker) in enumerate(day_trade_pairs.items()):
+        with _intra_cols[_idx]:
+            try:
+                _idf, _isrc = fetch_chart_data(_iticker, "15m", 120, live_mode)
+            except Exception:
+                _idf = pd.DataFrame()
+            if _idf.empty or len(_idf) < 21:
+                st.metric(_ipair, "—")
+                st.info("No 15-minute data available right now.")
+                continue
+            _ilatest = _idf.iloc[-1]
+            _isma20 = _idf['Close'].rolling(20).mean().iloc[-1]
+            _imomentum = "🟢 Bullish" if _ilatest['Close'] > _isma20 else "🔴 Bearish"
+            st.metric(_ipair, f"{_ilatest['Close']:.4f}", delta=_imomentum,
+                      delta_color="normal" if "Bull" in _imomentum else "inverse")
+            st.caption(f"15-Min Breakout Status · {_isrc}")
+
+            # Donchian breakout scanner (prior 10-bar channel, forming bar excluded)
+            _ihigh = _idf['High'].rolling(10).max().shift(1).iloc[-1]
+            _ilow = _idf['Low'].rolling(10).min().shift(1).iloc[-1]
+            if _ilatest['Close'] > _ihigh:
+                st.success("Upside Breakout Detected!")
+            elif _ilatest['Close'] < _ilow:
+                st.error("Downside Breakout Detected!")
+            else:
+                st.info("Ranging - Waiting for Breakout")
+
+# ==========================================
+# TAB 5: MACRO EDGE (DEBT-TO-GDP & CARRY)
+# ==========================================
+with tab_macro:
+    st.subheader("OANDA Carry Trade & Proxy Hedge Calculator")
+    st.markdown("""
+    **The Debt-to-GDP Edge:** Longing Mexico (Low Debt / High Yield) against Japan (High Debt / Low Yield).
+    *Because this is a 50:1 leveraged carry trade, we must execute a partial USD/MXN proxy hedge to survive a global market crash.*
+    """)
+
+    _mc1, _mc2 = st.columns(2)
+    carry_account = _mc1.number_input("OANDA Account Balance (USD)", value=20000, step=1000)
+    hedge_ratio = _mc2.slider("Hedge Ratio % (Protection vs Interest)", 10, 50, 25, step=5)
+
+    try:
+        _mxn_df, _mxn_src = fetch_chart_data("USDMXN=X", "1D", 5, live_mode)
+        live_usd_mxn = float(_mxn_df['Close'].iloc[-1])
+    except Exception:
+        live_usd_mxn, _mxn_src = 19.50, "fallback estimate"
+    st.caption(f"USD/MXN reference rate: {live_usd_mxn:.4f} · {_mxn_src}")
+
+    core_notional_usd = carry_account * 50  # 50:1 leverage
+    core_units_mxn = core_notional_usd * live_usd_mxn
+    hedge_notional_usd = core_notional_usd * (hedge_ratio / 100)
+
+    st.warning(f"⚠️ **Leverage Warning:** Deploying the full ${carry_account:,} at 50:1 requires an "
+               f"extra ${int(hedge_notional_usd / 50):,} in margin for the hedge. Scale down total "
+               f"account size if margin is limited.")
+
+    st.markdown("### Exact OANDA Execution Orders")
+    _hedge_cols = st.columns(2)
+    with _hedge_cols[0]:
+        st.success(f"**Trade 1: Core Carry Trade**\n\n**Action:** BUY\n\n**Pair:** MXN/JPY\n\n"
+                   f"**Units:** {int(core_units_mxn):,}")
+    with _hedge_cols[1]:
+        st.info(f"**Trade 2: Proxy Flash-Crash Hedge**\n\n**Action:** BUY\n\n**Pair:** USD/MXN\n\n"
+                f"**Units:** {int(hedge_notional_usd):,}")
+
+# ==========================================
+# TAB 6: ETF SWING TRADING (BUY THE DIP)
+# ==========================================
+with tab_etf:
+    st.subheader("Positive-Sum Equity Pullbacks")
+    st.markdown("Scanning for panic-selling dips in macro uptrends (Price < Lower Bollinger Band + RSI < 30).")
+
+    for _epair, _eticker in {"SPY (S&P 500)": "SPY", "QQQ (Nasdaq)": "QQQ"}.items():
+        st.divider()
+        try:
+            _edf, _esrc = fetch_chart_data(_eticker, "1D", 260, live_mode)
+        except Exception:
+            _edf = pd.DataFrame()
+        if _edf.empty or len(_edf) < 200:
+            st.info(f"Not enough daily history for {_epair} right now.")
+            continue
+
+        _edf = calculate_indicators(_edf.copy())  # adds SMA_200 + RSI
+        _edf['SMA_20'] = _edf['Close'].rolling(window=20).mean()
+        _edf['Lower_Band'] = _edf['SMA_20'] - (_edf['Close'].rolling(window=20).std() * 2)
+
+        _elatest = _edf.iloc[-1]
+        _eprice = float(_elatest['Close'])
+        if live_mode:
+            _elp = live_price(_eticker)  # real-time Webull last price when available
+            if _elp:
+                _eprice = _elp
+        _etrend = "🟢 Bull Market" if _elatest['Close'] > _elatest['SMA_200'] else "🔴 Bear Market"
+
+        _ec1, _ec2, _ec3 = st.columns(3)
+        _ec1.metric(_epair, f"${_eprice:.2f}")
+        _ec2.metric("200-Day Macro Trend", _etrend)
+        _ec3.metric("Current RSI", f"{_elatest['RSI']:.1f}")
+        st.caption(f"Daily bars: {_esrc}")
+
+        if (_elatest['Close'] < _elatest['Lower_Band'] and _elatest['RSI'] < 30
+                and _elatest['Close'] > _elatest['SMA_200']):
+            st.success(f"🚨 **BUY THE DIP SIGNAL FIRED:** {_epair} is heavily oversold while "
+                       f"maintaining its macro uptrend. Historically, this is a high-probability "
+                       f"mean-reversion entry.")
+        else:
+            st.info("Status: No panic-selling dip detected. Do not force a trade.")
